@@ -22,6 +22,13 @@ app.use('/api', authRouter);
 app.use(errorHandler);
 
 async function start() {
+  // Fail fast: sin estos secrets la firma de tokens fallaría en runtime con errores confusos
+  const missingSecrets = ['JWT_SECRET', 'JWT_REFRESH_SECRET'].filter((key) => !process.env[key]);
+  if (missingSecrets.length > 0) {
+    console.error(`Faltan variables de entorno: ${missingSecrets.join(', ')} (ver backend/.env.example)`);
+    process.exit(1);
+  }
+
   try {
     await checkPostgresConnection();
     console.log('PostgreSQL conectado');
