@@ -30,5 +30,13 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },
   },
+  // Los archivos de Context exportan componente + hook (patrón estándar de
+  // React Context), lo que rompe la regla de fast-refresh; se desactiva ahí.
+  {
+    files: ['**/context/**/*.jsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
   eslintConfigPrettier,
 ];

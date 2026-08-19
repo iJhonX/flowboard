@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import { checkPostgresConnection } from './config/postgres.js';
 import { connectMongo } from './config/mongo.js';
 import { healthRouter } from './routes/health.routes.js';
+import { authRouter } from './routes/auth.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -16,6 +17,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.use('/api', healthRouter);
+app.use('/api', authRouter);
 
 app.use(errorHandler);
 
