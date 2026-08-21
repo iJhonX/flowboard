@@ -10,7 +10,7 @@ const schemaPath = join(__dirname, 'schema.sql');
 async function initDb() {
   const schema = await readFile(schemaPath, 'utf-8');
   await pool.query(schema);
-  console.log('Esquema aplicado correctamente (tabla users lista)');
+  console.log('Esquema aplicado correctamente');
 }
 
 initDb()

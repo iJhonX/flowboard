@@ -5,6 +5,7 @@ import HealthCheck from './pages/HealthCheck'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import TeamDetail from './pages/TeamDetail'
 
 function App() {
   return (
@@ -15,6 +16,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Home />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/teams/:teamId"
+          element={
+            <ProtectedRoute>
+              <TeamDetail />
             </ProtectedRoute>
           }
         />

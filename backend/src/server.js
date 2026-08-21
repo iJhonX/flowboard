@@ -7,6 +7,7 @@ import { checkPostgresConnection } from './config/postgres.js';
 import { connectMongo } from './config/mongo.js';
 import { healthRouter } from './routes/health.routes.js';
 import { authRouter } from './routes/auth.routes.js';
+import { teamsRouter } from './routes/teams.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -18,6 +19,7 @@ app.use(cookieParser());
 
 app.use('/api', healthRouter);
 app.use('/api', authRouter);
+app.use('/api', teamsRouter);
 
 app.use(errorHandler);
 
