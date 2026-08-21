@@ -199,7 +199,7 @@ export default function TeamDetail() {
                   <p className="text-sm text-slate-500">{member.email}</p>
                 </div>
                 <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-                  {ROLE_LABELS[member.role]}
+                  {ROLE_LABELS[member.role] ?? member.role}
                 </span>
               </li>
             ))}

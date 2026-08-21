@@ -35,7 +35,10 @@ export default function Home() {
         }
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) {
+          setTeams([]);
+          setError(err.message);
+        }
       });
     return () => {
       cancelled = true;

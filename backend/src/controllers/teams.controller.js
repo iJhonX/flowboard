@@ -115,11 +115,17 @@ export async function inviteMember(req, res, next) {
 
     res.status(201).json({ member: { ...user, ...membership } });
   } catch (err) {
+    // Carrera entre el SELECT previo y el INSERT: violación de la PK (team_id, user_id)
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Ese usuario ya es miembro del equipo' });
+    }
     next(err);
   }
 }
 
-/** POST /api/teams/:teamId/boards — crea un tablero vacío dentro del equipo. */
+/** POST /api/teams/:teamId/boards — crea un tablero vacío dentro del equipo.
+ *  Cualquier miembro (owner/admin/member) puede crear tableros: es la misma
+ *  regla que Trello, donde crear contenido no es una acción restringida. */
 export async function createBoard(req, res, next) {
   const { name, description } = req.body;
 
