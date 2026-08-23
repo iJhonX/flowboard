@@ -37,9 +37,13 @@ export default function Board() {
   // Renombrar columna: columnId + nombre
   const [editingColumn, setEditingColumn] = useState(null);
 
-  // Evita setState tras desmontar (navegación rápida con una mutación en vuelo)
+  // Evita setState tras desmontar (navegación rápida con una mutación en vuelo).
+  // OJO: hay que volver a ponerlo en true dentro del effect — StrictMode en
+  // desarrollo monta→desmonta→remonta, y si solo se inicializa con useRef(true)
+  // el cleanup del primer ciclo lo deja en false para siempre.
   const mountedRef = useRef(true);
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
