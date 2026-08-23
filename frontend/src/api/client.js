@@ -40,5 +40,10 @@ export async function apiFetch(path, options = {}) {
     throw new Error(body.error ?? `Request failed with status ${res.status}`);
   }
 
+  // 204 No Content (p. ej. DELETE): no hay cuerpo que parsear
+  if (res.status === 204) {
+    return null;
+  }
+
   return res.json();
 }

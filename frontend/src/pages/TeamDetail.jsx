@@ -168,18 +168,19 @@ export default function TeamDetail() {
           ) : (
             <ul className="mt-3 space-y-2">
               {detail.boards.map((board) => (
-                <li
-                  key={board.id}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-3"
-                >
-                  <p className="font-medium text-slate-900">{board.name}</p>
-                  {board.description && (
-                    <p className="mt-0.5 text-sm text-slate-500">{board.description}</p>
-                  )}
-                  <p className="mt-1 text-xs text-slate-400">
-                    Creado el {new Date(board.created_at).toLocaleDateString()} · el tablero se
-                    abre en la Fase 3
-                  </p>
+                <li key={board.id}>
+                  <Link
+                    to={`/boards/${board.id}`}
+                    className="block rounded-lg border border-slate-200 bg-white px-4 py-3 hover:border-indigo-300 hover:shadow-sm"
+                  >
+                    <p className="font-medium text-slate-900">{board.name}</p>
+                    {board.description && (
+                      <p className="mt-0.5 text-sm text-slate-500">{board.description}</p>
+                    )}
+                    <p className="mt-1 text-xs text-slate-400">
+                      Creado el {new Date(board.created_at).toLocaleDateString()} · Abrir tablero →
+                    </p>
+                  </Link>
                 </li>
               ))}
             </ul>

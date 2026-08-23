@@ -6,6 +6,7 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import TeamDetail from './pages/TeamDetail'
+import Board from './pages/Board'
 
 function AppRoutes() {
   const location = useLocation()
@@ -26,6 +27,14 @@ function AppRoutes() {
             {/* key remonta el componente al cambiar de equipo: evita mostrar
                 por un instante los datos del equipo anterior */}
             <TeamDetail key={location.pathname} />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/boards/:boardId"
+        element={
+          <ProtectedRoute>
+            <Board key={location.pathname} />
           </ProtectedRoute>
         }
       />

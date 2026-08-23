@@ -8,6 +8,7 @@ import { connectMongo } from './config/mongo.js';
 import { healthRouter } from './routes/health.routes.js';
 import { authRouter } from './routes/auth.routes.js';
 import { teamsRouter } from './routes/teams.routes.js';
+import { boardsRouter } from './routes/boards.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -20,6 +21,7 @@ app.use(cookieParser());
 app.use('/api', healthRouter);
 app.use('/api', authRouter);
 app.use('/api', teamsRouter);
+app.use('/api', boardsRouter);
 
 app.use(errorHandler);
 

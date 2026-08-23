@@ -1,0 +1,41 @@
+import { apiFetch } from './client';
+
+export function fetchBoard(boardId) {
+  return apiFetch(`/api/boards/${boardId}`);
+}
+
+export function createColumn(boardId, name) {
+  return apiFetch(`/api/boards/${boardId}/columns`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function updateColumn(boardId, columnId, name) {
+  return apiFetch(`/api/boards/${boardId}/columns/${columnId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteColumn(boardId, columnId) {
+  return apiFetch(`/api/boards/${boardId}/columns/${columnId}`, { method: 'DELETE' });
+}
+
+export function createCard(boardId, columnId, { title, description = '', due_date = null }) {
+  return apiFetch(`/api/boards/${boardId}/cards`, {
+    method: 'POST',
+    body: JSON.stringify({ column_id: columnId, title, description, due_date }),
+  });
+}
+
+export function updateCard(boardId, cardId, { title, description, due_date }) {
+  return apiFetch(`/api/boards/${boardId}/cards/${cardId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title, description, due_date }),
+  });
+}
+
+export function deleteCard(boardId, cardId) {
+  return apiFetch(`/api/boards/${boardId}/cards/${cardId}`, { method: 'DELETE' });
+}
