@@ -55,3 +55,9 @@ export const updateCardSchema = z.object({
   // sobreescribirá con ''. Aceptado a propósito por simplicidad en Fase 3.
   due_date: dateString.nullable().optional(),
 });
+
+// Reordenamiento (Fase 4): columna destino + índice (0-based) donde queda la tarjeta.
+export const reorderCardSchema = z.object({
+  column_id: z.number().int().positive('La columna es obligatoria'),
+  position: z.number().int().min(0, 'La posición no puede ser negativa'),
+});

@@ -39,3 +39,11 @@ export function updateCard(boardId, cardId, { title, description, due_date }) {
 export function deleteCard(boardId, cardId) {
   return apiFetch(`/api/boards/${boardId}/cards/${cardId}`, { method: 'DELETE' });
 }
+
+/** Reordenar tarjeta (Fase 4): columna destino + índice 0-based. */
+export function reorderCard(boardId, cardId, columnId, position) {
+  return apiFetch(`/api/boards/${boardId}/cards/${cardId}/position`, {
+    method: 'PUT',
+    body: JSON.stringify({ column_id: columnId, position }),
+  });
+}

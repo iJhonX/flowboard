@@ -7,12 +7,14 @@ import {
   createCard,
   updateCard,
   deleteCard,
+  reorderCard,
 } from '../controllers/boards.controller.js';
 import {
   createColumnSchema,
   updateColumnSchema,
   createCardSchema,
   updateCardSchema,
+  reorderCardSchema,
 } from '../validators/board.schemas.js';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/requireAuth.js';
@@ -35,3 +37,8 @@ boardsRouter.delete('/boards/:boardId/columns/:columnId', deleteColumn);
 boardsRouter.post('/boards/:boardId/cards', validate(createCardSchema), createCard);
 boardsRouter.patch('/boards/:boardId/cards/:cardId', validate(updateCardSchema), updateCard);
 boardsRouter.delete('/boards/:boardId/cards/:cardId', deleteCard);
+boardsRouter.put(
+  '/boards/:boardId/cards/:cardId/position',
+  validate(reorderCardSchema),
+  reorderCard
+);
