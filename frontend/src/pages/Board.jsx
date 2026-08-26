@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   DndContext,
-  closestCorners,
+  closestCenter,
+  pointerWithin,
+  rectIntersection,
+  getFirstCollision,
+  MeasuringStrategy,
   PointerSensor,
   KeyboardSensor,
   useSensor,
@@ -117,6 +121,8 @@ function computeMove(prevColumns, activeId, over) {
   } else if (over.data.current?.type === 'card') {
     targetColId = over.data.current.columnId;
     const targetCol = prevColumns.find((c) => c.id === targetColId);
+    // Guard: el data de `over` puede quedar obsoleto tras un cambio de layout
+    if (!targetCol) return null;
     overIndex = targetCol.cards.findIndex((x) => String(x.id) === over.id);
     if (overIndex === -1) return null;
   } else {
@@ -124,6 +130,8 @@ function computeMove(prevColumns, activeId, over) {
   }
 
   const targetCol = prevColumns.find((c) => c.id === targetColId);
+  // Guard de paridad con el caso anterior
+  if (!targetCol) return null;
   const sameColumn = source.id === targetColId;
 
   if (sameColumn) {
@@ -206,6 +214,64 @@ export default function Board() {
   // (aunque se haya arrastrado): este flag traga UN click después de cada drag
   // para que no se abra el formulario de edición por accidente.
   const dragJustEndedRef = useRef(false);
+
+  // Detección de colisión y estabilidad del `over` (patrón del ejemplo oficial
+  // de dnd-kit para múltiples contenedores):
+  // - lastOverId: cuando el layout cambia a mitad del drag (nuestro onDragOver
+  //   mueve la tarjeta entre columnas), `over` puede volverse null; se devuelve
+  //   el último objetivo conocido para que dnd-kit no pierda el `over`.
+  const lastOverIdRef = useRef(null);
+  const recentlyMovedToNewContainerRef = useRef(false);
+  const activeIdRef = useRef(null);
+
+  // Al mover una tarjeta a otra columna el layout se desplaza; pasado un frame
+  // ya no hace falta el fallback de lastOverId.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      recentlyMovedToNewContainerRef.current = false;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [board?.columns]);
+
+  // Función plana (no useCallback): se recrea por render, que es justo lo que
+  // dnd-kit necesita aquí porque los rects/columnas cambian con cada render.
+  function collisionDetectionStrategy(args) {
+      // 1) Droppables que intersecan con el puntero (o fallback por rectángulos)
+      const pointerIntersections = pointerWithin(args);
+      const intersections =
+        pointerIntersections.length > 0 ? pointerIntersections : rectIntersection(args);
+      let overId = getFirstCollision(intersections, 'id');
+
+      if (overId != null) {
+        // 2) Si el objetivo es una columna CON tarjetas, devolver la tarjeta
+        //    más cercana dentro de ella (el hueco exacto donde caerá)
+        const overStr = String(overId);
+        if (overStr.startsWith('column-')) {
+          const columnId = Number(overStr.slice('column-'.length));
+          const column = board?.columns.find((c) => c.id === columnId);
+          const containerItems = (column?.cards ?? []).map((c) => String(c.id));
+          if (containerItems.length > 0) {
+            overId = closestCenter({
+              ...args,
+              droppableContainers: args.droppableContainers.filter(
+                (container) =>
+                  String(container.id) !== overStr &&
+                  containerItems.includes(String(container.id))
+              ),
+            })[0]?.id;
+          }
+        }
+        lastOverIdRef.current = overId;
+        return [{ id: overId }];
+      }
+
+      // 3) Sin intersección: si acabamos de mover de columna, apuntar al activo;
+      //    si no, al último objetivo conocido (evita que over sea null)
+      if (recentlyMovedToNewContainerRef.current) {
+        lastOverIdRef.current = activeIdRef.current;
+      }
+      return lastOverIdRef.current ? [{ id: lastOverIdRef.current }] : [];
+  }
 
   const sensors = useSensors(
     // distance 5px: un click normal (sin arrastrar) sigue abriendo la edición
@@ -342,6 +408,7 @@ export default function Board() {
   function onDragStart(event) {
     dragJustEndedRef.current = false;
     const { active } = event;
+    activeIdRef.current = active.id;
     const card =
       board.columns.flatMap((c) => c.cards).find((c) => String(c.id) === active.id) ?? null;
     setActiveCard(card);
@@ -356,19 +423,21 @@ export default function Board() {
     setBoard((prev) => {
       const result = computeMove(prev.columns, active.id, over);
       if (!result || !result.crossColumn) return prev;
+      recentlyMovedToNewContainerRef.current = true;
       return { ...prev, columns: result.columns };
     });
   }
 
   /** Al soltar: aplicar el movimiento final sobre el estado actual (que ya
-   *  incorpora los onDragOver predictivos), persistir y limpiar el overlay. */
+   *  incorpora los onDragOver predictivos), persistir y limpiar el overlay.
+   *  Se persiste SIEMPRE (aunque over sea null): si onDragOver ya había movido
+   *  la tarjeta, ese movimiento debe quedar persistido. */
   function onDragEnd(event) {
     dragJustEndedRef.current = true;
     setActiveCard(null);
     const { active, over } = event;
-    if (!over) return;
 
-    const result = computeMove(board.columns, active.id, over);
+    const result = over ? computeMove(board.columns, active.id, over) : null;
     const columns = result ? result.columns : board.columns;
     if (result) setBoard({ ...board, columns });
 
@@ -430,7 +499,15 @@ export default function Board() {
       <main className="mx-auto max-w-5xl px-4 py-6">
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCorners}
+          collisionDetection={collisionDetectionStrategy}
+          measuring={{
+            droppable: {
+              // Re-medir en cada render: los rects cambian cuando onDragOver
+              // mueve tarjetas entre columnas (la estrategia por defecto solo
+              // mide al iniciar el drag y produce rects obsoletos -> crash)
+              strategy: MeasuringStrategy.Always,
+            },
+          }}
           onDragStart={onDragStart}
           onDragOver={onDragOver}
           onDragEnd={(event) => {
