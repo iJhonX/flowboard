@@ -8,6 +8,7 @@ import {
   useSensor,
   useSensors,
   useDroppable,
+  DragOverlay,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -27,9 +28,27 @@ import {
   reorderCard,
 } from '../api/boards';
 
+/** Contenido visual de una tarjeta (reutilizado por SortableCard y el DragOverlay). */
+function CardContent({ card }) {
+  return (
+    <>
+      <p className="text-sm font-medium text-slate-900">{card.title}</p>
+      {card.description && (
+        <p className="mt-1 line-clamp-2 text-xs text-slate-500">{card.description}</p>
+      )}
+      {card.due_date && (
+        <p className="mt-1.5 text-xs text-slate-400">
+          📅 {new Date(`${card.due_date}T00:00:00`).toLocaleDateString()}
+        </p>
+      )}
+    </>
+  );
+}
+
 /** Tarjeta arrastrable. El id de dnd-kit es String(card.id) para evitar
  *  colisiones number/string; el data lleva column_id para saber de qué columna
- *  viene al soltar. */
+ *  viene al soltar. Mientras se arrastra se oculta (opacity-0): el DragOverlay
+ *  muestra la copia flotante que sigue al cursor. */
 function SortableCard({ card, onStartEdit }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: String(card.id),
@@ -50,18 +69,10 @@ function SortableCard({ card, onStartEdit }) {
         {...listeners}
         onClick={onStartEdit}
         className={`block w-full rounded-md bg-white p-3 text-left shadow-sm hover:shadow ${
-          isDragging ? 'opacity-70 ring-2 ring-indigo-400' : ''
+          isDragging ? 'opacity-0' : ''
         }`}
       >
-        <p className="text-sm font-medium text-slate-900">{card.title}</p>
-        {card.description && (
-          <p className="mt-1 line-clamp-2 text-xs text-slate-500">{card.description}</p>
-        )}
-        {card.due_date && (
-          <p className="mt-1.5 text-xs text-slate-400">
-            📅 {new Date(`${card.due_date}T00:00:00`).toLocaleDateString()}
-          </p>
-        )}
+        <CardContent card={card} />
       </button>
     </li>
   );
@@ -83,6 +94,69 @@ function ColumnCardsDroppable({ columnId, children }) {
       {children}
     </ul>
   );
+}
+
+/**
+ * Calcula el movimiento de la tarjeta activa sobre el objetivo `over` en el
+ * estado actual de columnas.
+ * - Dentro de la misma columna: arrayMove (semántica dnd-kit estándar: la tarjeta
+ *   ocupa la posición de la tarjeta sobre la que se suelta).
+ * - Entre columnas: quitar de origen e insertar delante de la tarjeta objetivo
+ *   (o al final si se suelta sobre el hueco de la columna).
+ * Devuelve { columns, targetColId, finalIndex, crossColumn } o null si no hay cambio.
+ */
+function computeMove(prevColumns, activeId, over) {
+  const source = prevColumns.find((c) => c.cards.some((x) => String(x.id) === activeId));
+  if (!source) return null;
+
+  let targetColId;
+  let overIndex; // null = soltar sobre el hueco de la columna (al final)
+  if (over.data.current?.type === 'column') {
+    targetColId = over.data.current.columnId;
+    overIndex = null;
+  } else if (over.data.current?.type === 'card') {
+    targetColId = over.data.current.columnId;
+    const targetCol = prevColumns.find((c) => c.id === targetColId);
+    overIndex = targetCol.cards.findIndex((x) => String(x.id) === over.id);
+    if (overIndex === -1) return null;
+  } else {
+    return null;
+  }
+
+  const targetCol = prevColumns.find((c) => c.id === targetColId);
+  const sameColumn = source.id === targetColId;
+
+  if (sameColumn) {
+    const oldIndex = source.cards.findIndex((x) => String(x.id) === activeId);
+    const newIndex = overIndex === null ? source.cards.length - 1 : overIndex;
+    if (oldIndex === newIndex) return null;
+    const cards = arrayMove(source.cards, oldIndex, newIndex);
+    return {
+      columns: prevColumns.map((c) => (c.id === source.id ? { ...c, cards } : c)),
+      targetColId: source.id,
+      finalIndex: newIndex,
+      crossColumn: false,
+    };
+  }
+
+  const rest = source.cards.filter((x) => String(x.id) !== activeId);
+  const moved = source.cards.find((x) => String(x.id) === activeId);
+  const insertAt = overIndex === null ? targetCol.cards.length : Math.min(overIndex, targetCol.cards.length);
+  const targetCards = [
+    ...targetCol.cards.slice(0, insertAt),
+    { ...moved, column_id: targetColId },
+    ...targetCol.cards.slice(insertAt),
+  ];
+  return {
+    columns: prevColumns.map((c) => {
+      if (c.id === source.id) return { ...c, cards: rest };
+      if (c.id === targetColId) return { ...c, cards: targetCards };
+      return c;
+    }),
+    targetColId,
+    finalIndex: insertAt,
+    crossColumn: true,
+  };
 }
 
 /**
@@ -112,6 +186,9 @@ export default function Board() {
 
   // Renombrar columna: columnId + nombre
   const [editingColumn, setEditingColumn] = useState(null);
+
+  // Tarjeta que se está arrastrando (para el DragOverlay)
+  const [activeCard, setActiveCard] = useState(null);
 
   // Evita setState tras desmontar (navegación rápida con una mutación en vuelo).
   // OJO: hay que volver a ponerlo en true dentro del effect — StrictMode en
@@ -261,64 +338,46 @@ export default function Board() {
     }
   }
 
-  /** Al soltar: actualiza el estado local (optimista) y persiste el orden. */
-  function onDragEnd(event) {
+  /** Al empezar el arrastre: recordar la tarjeta para el DragOverlay. */
+  function onDragStart(event) {
+    dragJustEndedRef.current = false;
+    const { active } = event;
+    const card =
+      board.columns.flatMap((c) => c.cards).find((c) => String(c.id) === active.id) ?? null;
+    setActiveCard(card);
+  }
+
+  /** Durante el arrastre: mover la tarjeta entre columnas en el estado local
+   *  para que la columna destino abra hueco y la de origen se cierre
+   *  (dentro de la misma columna lo anima la estrategia de sortable sola). */
+  function onDragOver(event) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
+    setBoard((prev) => {
+      const result = computeMove(prev.columns, active.id, over);
+      if (!result || !result.crossColumn) return prev;
+      return { ...prev, columns: result.columns };
+    });
+  }
 
-    const allCards = board.columns.flatMap((c) => c.cards);
-    const movedCard = allCards.find((c) => String(c.id) === active.id);
-    if (!movedCard) return;
+  /** Al soltar: aplicar el movimiento final sobre el estado actual (que ya
+   *  incorpora los onDragOver predictivos), persistir y limpiar el overlay. */
+  function onDragEnd(event) {
+    dragJustEndedRef.current = true;
+    setActiveCard(null);
+    const { active, over } = event;
+    if (!over) return;
 
-    const sourceColId = movedCard.column_id;
+    const result = computeMove(board.columns, active.id, over);
+    const columns = result ? result.columns : board.columns;
+    if (result) setBoard({ ...board, columns });
 
-    // Determinar columna e índice destino
-    let targetColId;
-    let targetIndex;
-    if (over.data.current?.type === 'card') {
-      const overCard = allCards.find((c) => String(c.id) === over.id);
-      if (!overCard) return;
-      targetColId = overCard.column_id;
-      targetIndex = board.columns
-        .find((c) => c.id === targetColId)
-        .cards.findIndex((c) => String(c.id) === over.id);
-    } else if (over.data.current?.type === 'column') {
-      targetColId = over.data.current.columnId;
-      targetIndex = board.columns.find((c) => c.id === targetColId).cards.length;
-    } else {
-      return;
-    }
+    // Localizar la tarjeta en el estado final y persistir su posición
+    const col = columns.find((c) => c.cards.some((x) => String(x.id) === active.id));
+    if (!col) return;
+    const finalIndex = col.cards.findIndex((x) => String(x.id) === active.id);
 
-    let newColumns;
-    if (sourceColId === targetColId) {
-      // Reordenar dentro de la misma columna
-      const sourceCards = board.columns.find((c) => c.id === sourceColId).cards;
-      const oldIndex = sourceCards.findIndex((c) => String(c.id) === active.id);
-      const newIndex =
-        over.data.current?.type === 'column' ? sourceCards.length - 1 : targetIndex;
-      if (oldIndex === newIndex) return;
-      newColumns = board.columns.map((c) =>
-        c.id === sourceColId ? { ...c, cards: arrayMove(sourceCards, oldIndex, newIndex) } : c
-      );
-      targetIndex = newIndex;
-    } else {
-      // Mover entre columnas: quitar de origen e insertar en destino
-      const sourceCards = board.columns.find((c) => c.id === sourceColId).cards;
-      const moved = { ...sourceCards.find((c) => String(c.id) === active.id), column_id: targetColId };
-      const rest = sourceCards.filter((c) => String(c.id) !== active.id);
-      const targetCards = [...board.columns.find((c) => c.id === targetColId).cards];
-      targetCards.splice(targetIndex, 0, moved);
-      newColumns = board.columns.map((c) => {
-        if (c.id === sourceColId) return { ...c, cards: rest };
-        if (c.id === targetColId) return { ...c, cards: targetCards };
-        return c;
-      });
-      targetIndex = targetCards.findIndex((c) => String(c.id) === active.id);
-    }
-
-    // Optimista: la UI responde al instante; si el servidor falla, se revierte
-    setBoard({ ...board, columns: newColumns });
-    reorderCard(boardId, movedCard.id, targetColId, targetIndex).catch(async (err) => {
+    reorderCard(boardId, col.cards[finalIndex].id, col.id, finalIndex).catch(async (err) => {
       setActionError(err.message);
       await refresh();
     });
@@ -372,15 +431,14 @@ export default function Board() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}
-          onDragStart={() => {
-            dragJustEndedRef.current = false;
-          }}
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
           onDragEnd={(event) => {
-            dragJustEndedRef.current = true;
             onDragEnd(event);
           }}
           onDragCancel={() => {
             dragJustEndedRef.current = true;
+            setActiveCard(null);
           }}
         >
           <div className="flex items-start gap-4 overflow-x-auto pb-4">
@@ -567,6 +625,16 @@ export default function Board() {
               </button>
             )}
           </div>
+
+          {/* Copia flotante de la tarjeta arrastrada: sigue al cursor mientras
+              las tarjetas de la columna destino se corren para abrir hueco */}
+          <DragOverlay dropAnimation={null}>
+            {activeCard ? (
+              <div className="w-64 rounded-md bg-white p-3 shadow-xl ring-2 ring-indigo-400">
+                <CardContent card={activeCard} />
+              </div>
+            ) : null}
+          </DragOverlay>
         </DndContext>
       </main>
     </div>
