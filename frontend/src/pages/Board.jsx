@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   DndContext,
@@ -31,6 +31,21 @@ import {
   deleteCard,
   reorderCard,
 } from '../api/boards';
+import { socket } from '../socket';
+
+// Eventos de otros clientes que invalidan el tablero actual (Fase 5).
+// El manejo es deliberadamente simple: en vez de parchear el estado local
+// con el payload de cada evento, se recarga el tablero completo — coherente
+// con la decisión de Fase 3 de no tener un store global ni lógica de merge.
+const BOARD_SOCKET_EVENTS = [
+  'column:created',
+  'column:updated',
+  'column:deleted',
+  'card:created',
+  'card:updated',
+  'card:deleted',
+  'card:moved',
+];
 
 /** Contenido visual de una tarjeta (reutilizado por SortableCard y el DragOverlay). */
 function CardContent({ card }) {
@@ -296,12 +311,39 @@ export default function Board() {
     };
   }, [boardId]);
 
-  async function refresh() {
+  // useCallback (no función plana): la referencia solo cambia si cambia
+  // boardId, así el efecto de sockets de más abajo no reconecta en cada
+  // render al declarar `refresh` como dependencia.
+  const refresh = useCallback(async () => {
     const data = await fetchBoard(boardId);
     if (!mountedRef.current) return;
     setBoard(data);
     setActionError(null);
-  }
+  }, [boardId]);
+
+  // Tiempo real (Fase 5): unirse a la sala del tablero y recargar ante
+  // cualquier cambio de otro cliente. Conectar/desconectar el socket junto
+  // con este efecto (en vez de mantenerlo abierto toda la sesión) porque
+  // solo esta pantalla necesita tiempo real por ahora.
+  useEffect(() => {
+    socket.connect();
+    socket.emit('board:join', boardId, (ack) => {
+      if (ack && !ack.ok) {
+        console.error('No se pudo unir a la sala del tablero:', ack.error);
+      }
+    });
+
+    const handleBoardChange = () => {
+      refresh().catch((err) => setActionError(err.message));
+    };
+    BOARD_SOCKET_EVENTS.forEach((event) => socket.on(event, handleBoardChange));
+
+    return () => {
+      BOARD_SOCKET_EVENTS.forEach((event) => socket.off(event, handleBoardChange));
+      socket.emit('board:leave', boardId);
+      socket.disconnect();
+    };
+  }, [boardId, refresh]);
 
   async function handleCreateColumn(e) {
     e.preventDefault();

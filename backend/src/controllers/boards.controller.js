@@ -1,4 +1,5 @@
 import { pool } from '../config/postgres.js';
+import { emitToBoard } from '../sockets/index.js';
 
 /** GET /api/boards/:boardId — tablero con sus columnas y, dentro, sus tarjetas. */
 export async function getBoard(req, res, next) {
@@ -45,6 +46,7 @@ export async function createColumn(req, res, next) {
        RETURNING *`,
       [req.board.id, name]
     );
+    emitToBoard(req.board.id, 'column:created', { boardId: req.board.id, column, actorUserId: req.userId });
     res.status(201).json({ column });
   } catch (err) {
     next(err);
@@ -65,6 +67,7 @@ export async function updateColumn(req, res, next) {
     if (!column) {
       return res.status(404).json({ error: 'Columna no encontrada en este tablero' });
     }
+    emitToBoard(req.board.id, 'column:updated', { boardId: req.board.id, column, actorUserId: req.userId });
     res.json({ column });
   } catch (err) {
     next(err);
@@ -81,6 +84,11 @@ export async function deleteColumn(req, res, next) {
     if (rowCount === 0) {
       return res.status(404).json({ error: 'Columna no encontrada en este tablero' });
     }
+    emitToBoard(req.board.id, 'column:deleted', {
+      boardId: req.board.id,
+      columnId: Number(req.params.columnId),
+      actorUserId: req.userId,
+    });
     res.status(204).end();
   } catch (err) {
     next(err);
@@ -113,6 +121,7 @@ export async function createCard(req, res, next) {
     if (!card) {
       return res.status(400).json({ error: 'La columna no pertenece a este tablero' });
     }
+    emitToBoard(req.board.id, 'card:created', { boardId: req.board.id, card, actorUserId: req.userId });
     res.status(201).json({ card });
   } catch (err) {
     next(err);
@@ -139,6 +148,7 @@ export async function updateCard(req, res, next) {
     if (!card) {
       return res.status(404).json({ error: 'Tarjeta no encontrada en este tablero' });
     }
+    emitToBoard(req.board.id, 'card:updated', { boardId: req.board.id, card, actorUserId: req.userId });
     res.json({ card });
   } catch (err) {
     next(err);
@@ -157,6 +167,11 @@ export async function deleteCard(req, res, next) {
     if (rowCount === 0) {
       return res.status(404).json({ error: 'Tarjeta no encontrada en este tablero' });
     }
+    emitToBoard(req.board.id, 'card:deleted', {
+      boardId: req.board.id,
+      cardId: Number(req.params.cardId),
+      actorUserId: req.userId,
+    });
     res.status(204).end();
   } catch (err) {
     next(err);
@@ -268,6 +283,13 @@ export async function reorderCard(req, res, next) {
     }
 
     await client.query('COMMIT');
+    emitToBoard(req.board.id, 'card:moved', {
+      boardId: req.board.id,
+      cardId,
+      columnId: column_id,
+      position,
+      actorUserId: req.userId,
+    });
     res.json({ ok: true });
   } catch (err) {
     if (client) await client.query('ROLLBACK').catch(() => {});

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { createServer } from 'node:http';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -10,8 +11,10 @@ import { authRouter } from './routes/auth.routes.js';
 import { teamsRouter } from './routes/teams.routes.js';
 import { boardsRouter } from './routes/boards.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { initSockets } from './sockets/index.js';
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT ?? 4000;
 
 app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
@@ -47,7 +50,9 @@ async function start() {
     console.error('No se pudo conectar a MongoDB:', err.message);
   }
 
-  app.listen(PORT, () => {
+  initSockets(httpServer);
+
+  httpServer.listen(PORT, () => {
     console.log(`Servidor escuchando en http://localhost:${PORT}`);
   });
 }

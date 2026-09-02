@@ -1,6 +1,23 @@
 import { pool } from '../config/postgres.js';
 
 /**
+ * Devuelve el tablero si `userId` es miembro del equipo dueño, o `null` si no.
+ * Extraído como función independiente para poder reutilizar la misma
+ * comprobación de membresía desde fuera de Express (sockets/index.js).
+ */
+export async function findBoardIfMember(userId, boardId) {
+  const { rows } = await pool.query(
+    `SELECT b.*
+     FROM boards b
+     JOIN teams t ON t.id = b.team_id
+     JOIN team_members tm ON tm.team_id = t.id
+     WHERE b.id = $1 AND tm.user_id = $2`,
+    [boardId, userId]
+  );
+  return rows[0] ?? null;
+}
+
+/**
  * Resuelve el tablero del parámetro :boardId y verifica que el usuario
  * autenticado sea miembro del equipo al que pertenece el tablero.
  * Si lo es, deja req.board (fila del tablero).
@@ -15,20 +32,12 @@ export async function requireBoardMember(req, res, next) {
   }
 
   try {
-    const { rows } = await pool.query(
-      `SELECT b.*
-       FROM boards b
-       JOIN teams t ON t.id = b.team_id
-       JOIN team_members tm ON tm.team_id = t.id
-       WHERE b.id = $1 AND tm.user_id = $2`,
-      [boardId, req.userId]
-    );
-
-    if (rows.length === 0) {
+    const board = await findBoardIfMember(req.userId, boardId);
+    if (!board) {
       return res.status(404).json({ error: 'Tablero no encontrado o no eres miembro del equipo' });
     }
 
-    req.board = rows[0];
+    req.board = board;
     next();
   } catch (err) {
     next(err);
