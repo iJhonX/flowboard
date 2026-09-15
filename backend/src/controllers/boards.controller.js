@@ -3,7 +3,14 @@ import { emitToBoard } from '../sockets/index.js';
 import { logActivity } from '../utils/activityLog.js';
 import { Comment } from '../models/comment.model.js';
 
-/** GET /api/boards/:boardId — tablero con sus columnas y, dentro, sus tarjetas. */
+/**
+ * GET /api/boards/:boardId — tablero con sus columnas y, dentro, sus
+ * tarjetas. Cada tarjeta lleva `comment_count` (de Mongo): como Postgres no
+ * puede hacer un JOIN contra otra base, se resuelve con un `$group` aparte
+ * sobre los ids de tarjetas ya cargados y se combina en memoria — el mismo
+ * patrón de "componer entre las dos bases en la capa de aplicación" que ya
+ * se usa para borrar comentarios en cascada (ver deleteCard/deleteColumn).
+ */
 export async function getBoard(req, res, next) {
   try {
     const boardId = req.board.id;
@@ -22,10 +29,23 @@ export async function getBoard(req, res, next) {
       ),
     ]);
 
+    const cardIds = cardsRes.rows.map((card) => card.id);
+    const commentCounts =
+      cardIds.length > 0
+        ? await Comment.aggregate([
+            { $match: { card_id: { $in: cardIds } } },
+            { $group: { _id: '$card_id', count: { $sum: 1 } } },
+          ])
+        : [];
+    const countByCardId = new Map(commentCounts.map((c) => [c._id, c.count]));
+
     const columns = columnsRes.rows.map((column) => ({ ...column, cards: [] }));
     const cardsByColumn = new Map(columns.map((column) => [column.id, column.cards]));
     for (const card of cardsRes.rows) {
-      cardsByColumn.get(card.column_id)?.push(card);
+      cardsByColumn.get(card.column_id)?.push({
+        ...card,
+        comment_count: countByCardId.get(card.id) ?? 0,
+      });
     }
 
     res.json({ board: boardRes.rows[0], columns });

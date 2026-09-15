@@ -39,6 +39,9 @@ import ActivityFeed from '../components/ActivityFeed';
 // El manejo es deliberadamente simple: en vez de parchear el estado local
 // con el payload de cada evento, se recarga el tablero completo — coherente
 // con la decisión de Fase 3 de no tener un store global ni lógica de merge.
+// 'comment:created' está incluido aunque no cambie columnas/tarjetas: getBoard
+// devuelve comment_count por tarjeta (Fase 6), y hay que refrescarlo para que
+// el contador 💬 de la vista de tablero se actualice en vivo.
 const BOARD_SOCKET_EVENTS = [
   'column:created',
   'column:updated',
@@ -47,6 +50,7 @@ const BOARD_SOCKET_EVENTS = [
   'card:updated',
   'card:deleted',
   'card:moved',
+  'comment:created',
 ];
 
 /** Contenido visual de una tarjeta (reutilizado por SortableCard y el DragOverlay). */
@@ -57,9 +61,12 @@ function CardContent({ card }) {
       {card.description && (
         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{card.description}</p>
       )}
-      {card.due_date && (
-        <p className="mt-1.5 text-xs text-slate-400">
-          📅 {new Date(`${card.due_date}T00:00:00`).toLocaleDateString()}
+      {(card.due_date || card.comment_count > 0) && (
+        <p className="mt-1.5 flex items-center gap-2 text-xs text-slate-400">
+          {card.due_date && (
+            <span>📅 {new Date(`${card.due_date}T00:00:00`).toLocaleDateString()}</span>
+          )}
+          {card.comment_count > 0 && <span>💬 {card.comment_count}</span>}
         </p>
       )}
     </>
@@ -69,8 +76,14 @@ function CardContent({ card }) {
 /** Tarjeta arrastrable. El id de dnd-kit es String(card.id) para evitar
  *  colisiones number/string; el data lleva column_id para saber de qué columna
  *  viene al soltar. Mientras se arrastra se oculta (opacity-0): el DragOverlay
- *  muestra la copia flotante que sigue al cursor. */
-function SortableCard({ card, onStartEdit }) {
+ *  muestra la copia flotante que sigue al cursor.
+ *
+ *  El botón de comentarios es un <button> HERMANO del botón de la tarjeta,
+ *  no anidado dentro de él (HTML no permite un botón interactivo dentro de
+ *  otro) — se posiciona encima con CSS. Al ser hermanos, un click en uno no
+ *  llega al otro, así que tampoco hace falta pelear con los listeners de
+ *  arrastre de dnd-kit (que solo están atados al botón principal). */
+function SortableCard({ card, onStartEdit, onOpenComments }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: String(card.id),
     data: { type: 'card', columnId: card.column_id },
@@ -82,7 +95,7 @@ function SortableCard({ card, onStartEdit }) {
   };
 
   return (
-    <li>
+    <li className="relative">
       <button
         ref={setNodeRef}
         style={style}
@@ -95,6 +108,16 @@ function SortableCard({ card, onStartEdit }) {
       >
         <CardContent card={card} />
       </button>
+      {!isDragging && (
+        <button
+          type="button"
+          onClick={onOpenComments}
+          title="Ver comentarios"
+          className="absolute right-1.5 top-1.5 rounded px-1.5 py-0.5 text-xs text-slate-300 hover:bg-slate-100 hover:text-indigo-600"
+        >
+          💬
+        </button>
+      )}
     </li>
   );
 }
@@ -387,12 +410,16 @@ export default function Board() {
     }
   }
 
-  function startEdit(card) {
+  // focusComments: true cuando se abrió desde el ícono 💬 (en vez del click
+  // normal sobre la tarjeta) — CardComments usa esto para enfocar directo su
+  // input, así abrir a comentar se siente distinto de abrir a editar.
+  function startEdit(card, { focusComments = false } = {}) {
     setEditing({
       cardId: card.id,
       title: card.title,
       description: card.description ?? '',
       due_date: card.due_date ?? '',
+      focusComments,
     });
   }
 
@@ -403,6 +430,11 @@ export default function Board() {
       return;
     }
     startEdit(card);
+  }
+
+  /** Ícono 💬 de la tarjeta: abre directo enfocando el campo de comentarios. */
+  function handleOpenComments(card) {
+    startEdit(card, { focusComments: true });
   }
 
   async function handleSaveEdit(e) {
@@ -697,11 +729,20 @@ export default function Board() {
                                 </button>
                               </div>
                             </form>
-                            <CardComments boardId={boardId} cardId={card.id} />
+                            <CardComments
+                              boardId={boardId}
+                              cardId={card.id}
+                              autoFocus={editing.focusComments}
+                            />
                             </div>
                           </li>
                         ) : (
-                          <SortableCard key={card.id} card={card} onStartEdit={() => handleCardClick(card)} />
+                          <SortableCard
+                            key={card.id}
+                            card={card}
+                            onStartEdit={() => handleCardClick(card)}
+                            onOpenComments={() => handleOpenComments(card)}
+                          />
                         )
                       )}
                     </SortableContext>

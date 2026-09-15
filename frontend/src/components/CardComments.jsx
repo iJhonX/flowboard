@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fetchComments, createComment } from '../api/comments';
 import { socket } from '../socket';
 
@@ -26,10 +26,21 @@ function addCommentIfNew(prev, comment) {
   return [...list, comment];
 }
 
-export default function CardComments({ boardId, cardId }) {
+export default function CardComments({ boardId, cardId, autoFocus = false }) {
   const [comments, setComments] = useState(null); // null = cargando
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Al abrir la tarjeta desde el ícono 💬 (en vez del click normal): llevar
+  // la vista directo a esta sección y enfocar el input, para que se sienta
+  // como "vine a comentar" y no como "estoy en el formulario de edición".
+  useEffect(() => {
+    if (!autoFocus) return;
+    containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    inputRef.current?.focus();
+  }, [autoFocus]);
 
   // No hace falta resetear `comments` a null aquí: este componente vive
   // dentro de un <li key={card.id}>, así que React lo desmonta/remonta por
@@ -72,7 +83,7 @@ export default function CardComments({ boardId, cardId }) {
   }
 
   return (
-    <div className="mt-3 border-t border-slate-200 pt-3">
+    <div ref={containerRef} className="mt-3 border-t border-slate-200 pt-3">
       <h3 className="mb-2 text-xs font-semibold uppercase text-slate-500">Comentarios</h3>
       {error && <p className="mb-2 text-xs text-red-600">{error}</p>}
       {comments === null ? (
@@ -91,6 +102,7 @@ export default function CardComments({ boardId, cardId }) {
       )}
       <form onSubmit={handleSubmit} className="flex gap-1.5">
         <input
+          ref={inputRef}
           type="text"
           maxLength={2000}
           placeholder="Escribe un comentario…"
