@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchComments, createComment } from '../api/comments';
 import { socket } from '../socket';
 
 /**
- * Comentarios de una tarjeta (Fase 6). Vive dentro del formulario de edición
- * de Board.jsx, así que su ciclo de vida es corto: se monta al abrir una
- * tarjeta y se desmonta al cerrarla o guardar/cancelar.
+ * Lista de comentarios de una tarjeta + formulario para agregar uno (Fase 6).
+ * Vive dentro de CardCommentsModal — su ciclo de vida es corto: se monta al
+ * abrir el modal y se desmonta al cerrarlo, así que no hace falta resetear
+ * `comments` a null entre tarjetas.
  *
  * Tiempo real: escucha 'comment:created' en el socket ya conectado por
  * Board.jsx y agrega el comentario si es de esta tarjeta.
@@ -26,25 +27,11 @@ function addCommentIfNew(prev, comment) {
   return [...list, comment];
 }
 
-export default function CardComments({ boardId, cardId, autoFocus = false }) {
+export default function CardComments({ boardId, cardId }) {
   const [comments, setComments] = useState(null); // null = cargando
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
-  const containerRef = useRef(null);
-  const inputRef = useRef(null);
 
-  // Al abrir la tarjeta desde el ícono 💬 (en vez del click normal): llevar
-  // la vista directo a esta sección y enfocar el input, para que se sienta
-  // como "vine a comentar" y no como "estoy en el formulario de edición".
-  useEffect(() => {
-    if (!autoFocus) return;
-    containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    inputRef.current?.focus();
-  }, [autoFocus]);
-
-  // No hace falta resetear `comments` a null aquí: este componente vive
-  // dentro de un <li key={card.id}>, así que React lo desmonta/remonta por
-  // completo al cambiar de tarjeta en edición (el estado ya nace en null).
   useEffect(() => {
     let cancelled = false;
     fetchComments(boardId, cardId)
@@ -83,15 +70,14 @@ export default function CardComments({ boardId, cardId, autoFocus = false }) {
   }
 
   return (
-    <div ref={containerRef} className="mt-3 border-t border-slate-200 pt-3">
-      <h3 className="mb-2 text-xs font-semibold uppercase text-slate-500">Comentarios</h3>
+    <div>
       {error && <p className="mb-2 text-xs text-red-600">{error}</p>}
       {comments === null ? (
         <p className="mb-2 text-xs text-slate-400">Cargando…</p>
       ) : comments.length === 0 ? (
         <p className="mb-2 text-xs text-slate-400">Sin comentarios todavía.</p>
       ) : (
-        <ul className="mb-2 max-h-40 space-y-2 overflow-y-auto">
+        <ul className="mb-3 space-y-2">
           {comments.map((comment) => (
             <li key={comment._id} className="rounded bg-slate-50 p-2 text-xs">
               <p className="font-medium text-slate-700">{comment.user_name}</p>
@@ -102,7 +88,7 @@ export default function CardComments({ boardId, cardId, autoFocus = false }) {
       )}
       <form onSubmit={handleSubmit} className="flex gap-1.5">
         <input
-          ref={inputRef}
+          autoFocus
           type="text"
           maxLength={2000}
           placeholder="Escribe un comentario…"

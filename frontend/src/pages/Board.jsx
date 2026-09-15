@@ -32,7 +32,7 @@ import {
   reorderCard,
 } from '../api/boards';
 import { socket } from '../socket';
-import CardComments from '../components/CardComments';
+import CardCommentsModal from '../components/CardCommentsModal';
 import ActivityFeed from '../components/ActivityFeed';
 
 // Eventos de otros clientes que invalidan el tablero actual (Fase 5).
@@ -61,12 +61,9 @@ function CardContent({ card }) {
       {card.description && (
         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{card.description}</p>
       )}
-      {(card.due_date || card.comment_count > 0) && (
-        <p className="mt-1.5 flex items-center gap-2 text-xs text-slate-400">
-          {card.due_date && (
-            <span>📅 {new Date(`${card.due_date}T00:00:00`).toLocaleDateString()}</span>
-          )}
-          {card.comment_count > 0 && <span>💬 {card.comment_count}</span>}
+      {card.due_date && (
+        <p className="mt-1.5 text-xs text-slate-400">
+          📅 {new Date(`${card.due_date}T00:00:00`).toLocaleDateString()}
         </p>
       )}
     </>
@@ -78,12 +75,14 @@ function CardContent({ card }) {
  *  viene al soltar. Mientras se arrastra se oculta (opacity-0): el DragOverlay
  *  muestra la copia flotante que sigue al cursor.
  *
- *  El botón de comentarios es un <button> HERMANO del botón de la tarjeta,
- *  no anidado dentro de él (HTML no permite un botón interactivo dentro de
- *  otro) — se posiciona encima con CSS. Al ser hermanos, un click en uno no
- *  llega al otro, así que tampoco hace falta pelear con los listeners de
- *  arrastre de dnd-kit (que solo están atados al botón principal). */
-function SortableCard({ card, onStartEdit, onOpenComments }) {
+ *  El botón de comentarios (el propio contador 💬 N) es un <button> HERMANO
+ *  del botón de la tarjeta, no anidado dentro de él (HTML no permite un
+ *  botón interactivo dentro de otro) — se posiciona encima con CSS. Al ser
+ *  hermanos, un click en uno no llega al otro, así que tampoco hace falta
+ *  pelear con los listeners de arrastre de dnd-kit (que solo están atados
+ *  al botón principal). Abre el modal de "solo comentarios", no el
+ *  formulario de edición de la tarjeta. */
+function SortableCard({ card, onStartEdit, onViewComments }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: String(card.id),
     data: { type: 'card', columnId: card.column_id },
@@ -102,7 +101,7 @@ function SortableCard({ card, onStartEdit, onOpenComments }) {
         {...attributes}
         {...listeners}
         onClick={onStartEdit}
-        className={`block w-full rounded-md bg-white p-3 pr-8 text-left shadow-sm hover:shadow ${
+        className={`block w-full rounded-md bg-white p-3 pr-10 text-left shadow-sm hover:shadow ${
           isDragging ? 'opacity-0' : ''
         }`}
       >
@@ -111,11 +110,11 @@ function SortableCard({ card, onStartEdit, onOpenComments }) {
       {!isDragging && (
         <button
           type="button"
-          onClick={onOpenComments}
+          onClick={onViewComments}
           title="Ver comentarios"
-          className="absolute right-1.5 top-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-indigo-100 hover:text-indigo-700"
+          className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-indigo-100 hover:text-indigo-700"
         >
-          💬
+          💬{card.comment_count > 0 && <span>{card.comment_count}</span>}
         </button>
       )}
     </li>
@@ -237,6 +236,11 @@ export default function Board() {
 
   // Panel de actividad (Fase 6)
   const [showActivity, setShowActivity] = useState(false);
+
+  // Tarjeta cuyo modal de "solo comentarios" está abierto (Fase 6) — separado
+  // por completo de `editing`: ver comentarios NUNCA debe mostrar el
+  // formulario de edición de la tarjeta.
+  const [viewingCommentsCard, setViewingCommentsCard] = useState(null);
 
   // Tarjeta que se está arrastrando (para el DragOverlay)
   const [activeCard, setActiveCard] = useState(null);
@@ -410,16 +414,12 @@ export default function Board() {
     }
   }
 
-  // focusComments: true cuando se abrió desde el ícono 💬 (en vez del click
-  // normal sobre la tarjeta) — CardComments usa esto para enfocar directo su
-  // input, así abrir a comentar se siente distinto de abrir a editar.
-  function startEdit(card, { focusComments = false } = {}) {
+  function startEdit(card) {
     setEditing({
       cardId: card.id,
       title: card.title,
       description: card.description ?? '',
       due_date: card.due_date ?? '',
-      focusComments,
     });
   }
 
@@ -430,11 +430,6 @@ export default function Board() {
       return;
     }
     startEdit(card);
-  }
-
-  /** Ícono 💬 de la tarjeta: abre directo enfocando el campo de comentarios. */
-  function handleOpenComments(card) {
-    startEdit(card, { focusComments: true });
   }
 
   async function handleSaveEdit(e) {
@@ -682,8 +677,10 @@ export default function Board() {
                       {column.cards.map((card) =>
                         editing?.cardId === card.id ? (
                           <li key={card.id}>
-                            <div className="space-y-2 rounded-md bg-white p-3 shadow-sm">
-                            <form onSubmit={handleSaveEdit} className="space-y-2">
+                            <form
+                              onSubmit={handleSaveEdit}
+                              className="space-y-2 rounded-md bg-white p-3 shadow-sm"
+                            >
                               <input
                                 type="text"
                                 required
@@ -729,19 +726,13 @@ export default function Board() {
                                 </button>
                               </div>
                             </form>
-                            <CardComments
-                              boardId={boardId}
-                              cardId={card.id}
-                              autoFocus={editing.focusComments}
-                            />
-                            </div>
                           </li>
                         ) : (
                           <SortableCard
                             key={card.id}
                             card={card}
                             onStartEdit={() => handleCardClick(card)}
-                            onOpenComments={() => handleOpenComments(card)}
+                            onViewComments={() => setViewingCommentsCard(card)}
                           />
                         )
                       )}
@@ -825,6 +816,14 @@ export default function Board() {
       </main>
 
       <ActivityFeed boardId={boardId} open={showActivity} onClose={() => setShowActivity(false)} />
+
+      {viewingCommentsCard && (
+        <CardCommentsModal
+          boardId={boardId}
+          card={viewingCommentsCard}
+          onClose={() => setViewingCommentsCard(null)}
+        />
+      )}
     </div>
   );
 }
