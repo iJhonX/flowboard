@@ -102,7 +102,7 @@ function SortableCard({ card, onStartEdit, onOpenComments }) {
         {...attributes}
         {...listeners}
         onClick={onStartEdit}
-        className={`block w-full rounded-md bg-white p-3 text-left shadow-sm hover:shadow ${
+        className={`block w-full rounded-md bg-white p-3 pr-8 text-left shadow-sm hover:shadow ${
           isDragging ? 'opacity-0' : ''
         }`}
       >
@@ -113,7 +113,7 @@ function SortableCard({ card, onStartEdit, onOpenComments }) {
           type="button"
           onClick={onOpenComments}
           title="Ver comentarios"
-          className="absolute right-1.5 top-1.5 rounded px-1.5 py-0.5 text-xs text-slate-300 hover:bg-slate-100 hover:text-indigo-600"
+          className="absolute right-1.5 top-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-indigo-100 hover:text-indigo-700"
         >
           💬
         </button>
