@@ -32,6 +32,8 @@ import {
   reorderCard,
 } from '../api/boards';
 import { socket } from '../socket';
+import CardComments from '../components/CardComments';
+import ActivityFeed from '../components/ActivityFeed';
 
 // Eventos de otros clientes que invalidan el tablero actual (Fase 5).
 // El manejo es deliberadamente simple: en vez de parchear el estado local
@@ -210,6 +212,9 @@ export default function Board() {
   // Renombrar columna: columnId + nombre
   const [editingColumn, setEditingColumn] = useState(null);
 
+  // Panel de actividad (Fase 6)
+  const [showActivity, setShowActivity] = useState(false);
+
   // Tarjeta que se está arrastrando (para el DragOverlay)
   const [activeCard, setActiveCard] = useState(null);
 
@@ -322,9 +327,20 @@ export default function Board() {
   }, [boardId]);
 
   // Tiempo real (Fase 5): unirse a la sala del tablero y recargar ante
-  // cualquier cambio de otro cliente. Conectar/desconectar el socket junto
-  // con este efecto (en vez de mantenerlo abierto toda la sesión) porque
-  // solo esta pantalla necesita tiempo real por ahora.
+  // cualquier cambio de otro cliente.
+  //
+  // IMPORTANTE: este efecto llama a socket.connect() pero NUNCA a
+  // socket.disconnect() — solo entra/sale de la SALA en el cleanup. La
+  // primera versión sí desconectaba al desmontar, y bajo StrictMode (que
+  // monta -> desmonta -> vuelve a montar todo efecto una vez en desarrollo)
+  // eso abría una condición de carrera real: el segundo connect() podía
+  // completarse en el servidor ANTES de que el disconnect() del primer
+  // montaje terminara de cerrarse, dejando dos conexiones simultáneas
+  // unidas a la misma sala — cada evento llegaba duplicado (se detectó así:
+  // un comentario aparecía dos veces en el panel). connect() sí es seguro
+  // de llamar repetido (no-op si ya está conectado/conectando), así que el
+  // socket se conecta una vez por sesión y se queda abierto de ahí en
+  // adelante; solo cambia la sala a la que está unido.
   useEffect(() => {
     socket.connect();
     socket.emit('board:join', boardId, (ack) => {
@@ -341,7 +357,6 @@ export default function Board() {
     return () => {
       BOARD_SOCKET_EVENTS.forEach((event) => socket.off(event, handleBoardChange));
       socket.emit('board:leave', boardId);
-      socket.disconnect();
     };
   }, [boardId, refresh]);
 
@@ -526,9 +541,17 @@ export default function Board() {
               <span className="hidden text-sm text-slate-400 sm:inline">{board.board.description}</span>
             )}
           </div>
-          <Link to="/health" className="text-sm text-slate-500 hover:text-slate-700">
-            Estado del sistema
-          </Link>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowActivity((prev) => !prev)}
+              className="text-sm text-slate-500 hover:text-slate-700"
+            >
+              Actividad
+            </button>
+            <Link to="/health" className="text-sm text-slate-500 hover:text-slate-700">
+              Estado del sistema
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -627,7 +650,8 @@ export default function Board() {
                       {column.cards.map((card) =>
                         editing?.cardId === card.id ? (
                           <li key={card.id}>
-                            <form onSubmit={handleSaveEdit} className="space-y-2 rounded-md bg-white p-3 shadow-sm">
+                            <div className="space-y-2 rounded-md bg-white p-3 shadow-sm">
+                            <form onSubmit={handleSaveEdit} className="space-y-2">
                               <input
                                 type="text"
                                 required
@@ -673,6 +697,8 @@ export default function Board() {
                                 </button>
                               </div>
                             </form>
+                            <CardComments boardId={boardId} cardId={card.id} />
+                            </div>
                           </li>
                         ) : (
                           <SortableCard key={card.id} card={card} onStartEdit={() => handleCardClick(card)} />
@@ -756,6 +782,8 @@ export default function Board() {
           </DragOverlay>
         </DndContext>
       </main>
+
+      <ActivityFeed boardId={boardId} open={showActivity} onClose={() => setShowActivity(false)} />
     </div>
   );
 }

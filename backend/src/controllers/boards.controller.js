@@ -1,5 +1,7 @@
 import { pool } from '../config/postgres.js';
 import { emitToBoard } from '../sockets/index.js';
+import { logActivity } from '../utils/activityLog.js';
+import { Comment } from '../models/comment.model.js';
 
 /** GET /api/boards/:boardId — tablero con sus columnas y, dentro, sus tarjetas. */
 export async function getBoard(req, res, next) {
@@ -47,6 +49,12 @@ export async function createColumn(req, res, next) {
       [req.board.id, name]
     );
     emitToBoard(req.board.id, 'column:created', { boardId: req.board.id, column, actorUserId: req.userId });
+    logActivity({
+      boardId: req.board.id,
+      userId: req.userId,
+      actionType: 'column_created',
+      metadata: { columnId: column.id, columnName: column.name },
+    });
     res.status(201).json({ column });
   } catch (err) {
     next(err);
@@ -68,26 +76,57 @@ export async function updateColumn(req, res, next) {
       return res.status(404).json({ error: 'Columna no encontrada en este tablero' });
     }
     emitToBoard(req.board.id, 'column:updated', { boardId: req.board.id, column, actorUserId: req.userId });
+    logActivity({
+      boardId: req.board.id,
+      userId: req.userId,
+      actionType: 'column_updated',
+      metadata: { columnId: column.id, columnName: column.name },
+    });
     res.json({ column });
   } catch (err) {
     next(err);
   }
 }
 
-/** DELETE /api/boards/:boardId/columns/:columnId — borra la columna y sus tarjetas (CASCADE). */
+/**
+ * DELETE /api/boards/:boardId/columns/:columnId — borra la columna y sus
+ * tarjetas (CASCADE en Postgres). Los comentarios de esas tarjetas viven en
+ * Mongo, que no sabe nada de ese CASCADE: hay que borrarlos a mano o quedan
+ * huérfanos. Por eso se leen los ids de las tarjetas ANTES del DELETE (una
+ * vez borrada la columna ya no hay forma de recuperarlos).
+ */
 export async function deleteColumn(req, res, next) {
   try {
-    const { rowCount } = await pool.query(
-      'DELETE FROM columns WHERE id = $1 AND board_id = $2',
-      [req.params.columnId, req.board.id]
-    );
-    if (rowCount === 0) {
+    const { rows: cardRows } = await pool.query('SELECT id FROM cards WHERE column_id = $1', [
+      req.params.columnId,
+    ]);
+
+    const {
+      rows: [column],
+    } = await pool.query('DELETE FROM columns WHERE id = $1 AND board_id = $2 RETURNING id, name', [
+      req.params.columnId,
+      req.board.id,
+    ]);
+    if (!column) {
       return res.status(404).json({ error: 'Columna no encontrada en este tablero' });
     }
+
+    if (cardRows.length > 0) {
+      Comment.deleteMany({ card_id: { $in: cardRows.map((r) => r.id) } }).catch((err) =>
+        console.error('No se pudieron borrar los comentarios de la columna eliminada:', err)
+      );
+    }
+
     emitToBoard(req.board.id, 'column:deleted', {
       boardId: req.board.id,
-      columnId: Number(req.params.columnId),
+      columnId: column.id,
       actorUserId: req.userId,
+    });
+    logActivity({
+      boardId: req.board.id,
+      userId: req.userId,
+      actionType: 'column_deleted',
+      metadata: { columnId: column.id, columnName: column.name },
     });
     res.status(204).end();
   } catch (err) {
@@ -122,6 +161,12 @@ export async function createCard(req, res, next) {
       return res.status(400).json({ error: 'La columna no pertenece a este tablero' });
     }
     emitToBoard(req.board.id, 'card:created', { boardId: req.board.id, card, actorUserId: req.userId });
+    logActivity({
+      boardId: req.board.id,
+      userId: req.userId,
+      actionType: 'card_created',
+      metadata: { cardId: card.id, title: card.title },
+    });
     res.status(201).json({ card });
   } catch (err) {
     next(err);
@@ -149,28 +194,48 @@ export async function updateCard(req, res, next) {
       return res.status(404).json({ error: 'Tarjeta no encontrada en este tablero' });
     }
     emitToBoard(req.board.id, 'card:updated', { boardId: req.board.id, card, actorUserId: req.userId });
+    logActivity({
+      boardId: req.board.id,
+      userId: req.userId,
+      actionType: 'card_updated',
+      metadata: { cardId: card.id, title: card.title },
+    });
     res.json({ card });
   } catch (err) {
     next(err);
   }
 }
 
-/** DELETE /api/boards/:boardId/cards/:cardId */
+/** DELETE /api/boards/:boardId/cards/:cardId — borra también sus comentarios en Mongo (ver deleteColumn). */
 export async function deleteCard(req, res, next) {
   try {
-    const { rowCount } = await pool.query(
+    const {
+      rows: [card],
+    } = await pool.query(
       `DELETE FROM cards
        WHERE id = $1
-         AND column_id IN (SELECT id FROM columns WHERE board_id = $2)`,
+         AND column_id IN (SELECT id FROM columns WHERE board_id = $2)
+       RETURNING id, title`,
       [req.params.cardId, req.board.id]
     );
-    if (rowCount === 0) {
+    if (!card) {
       return res.status(404).json({ error: 'Tarjeta no encontrada en este tablero' });
     }
+
+    Comment.deleteMany({ card_id: card.id }).catch((err) =>
+      console.error('No se pudieron borrar los comentarios de la tarjeta eliminada:', err)
+    );
+
     emitToBoard(req.board.id, 'card:deleted', {
       boardId: req.board.id,
-      cardId: Number(req.params.cardId),
+      cardId: card.id,
       actorUserId: req.userId,
+    });
+    logActivity({
+      boardId: req.board.id,
+      userId: req.userId,
+      actionType: 'card_deleted',
+      metadata: { cardId: card.id, title: card.title },
     });
     res.status(204).end();
   } catch (err) {
@@ -207,7 +272,7 @@ export async function reorderCard(req, res, next) {
     const {
       rows: [card],
     } = await client.query(
-      `SELECT id, column_id AS old_column_id
+      `SELECT id, title, column_id AS old_column_id
        FROM cards
        WHERE id = $1 AND column_id IN (SELECT id FROM columns WHERE board_id = $2)
        FOR UPDATE`,
@@ -289,6 +354,12 @@ export async function reorderCard(req, res, next) {
       columnId: column_id,
       position,
       actorUserId: req.userId,
+    });
+    logActivity({
+      boardId: req.board.id,
+      userId: req.userId,
+      actionType: 'card_moved',
+      metadata: { cardId, title: card.title },
     });
     res.json({ ok: true });
   } catch (err) {

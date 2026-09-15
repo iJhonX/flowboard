@@ -9,6 +9,8 @@ import {
   deleteCard,
   reorderCard,
 } from '../controllers/boards.controller.js';
+import { listComments, createComment } from '../controllers/comments.controller.js';
+import { listActivity } from '../controllers/activity.controller.js';
 import {
   createColumnSchema,
   updateColumnSchema,
@@ -16,9 +18,11 @@ import {
   updateCardSchema,
   reorderCardSchema,
 } from '../validators/board.schemas.js';
+import { createCommentSchema } from '../validators/comment.schemas.js';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireBoardMember } from '../middleware/requireBoardMember.js';
+import { requireCardInBoard } from '../middleware/requireCardInBoard.js';
 
 export const boardsRouter = Router();
 
@@ -41,4 +45,17 @@ boardsRouter.put(
   '/boards/:boardId/cards/:cardId/position',
   validate(reorderCardSchema),
   reorderCard
+);
+
+boardsRouter.get('/boards/:boardId/activity', listActivity);
+boardsRouter.get(
+  '/boards/:boardId/cards/:cardId/comments',
+  requireCardInBoard,
+  listComments
+);
+boardsRouter.post(
+  '/boards/:boardId/cards/:cardId/comments',
+  requireCardInBoard,
+  validate(createCommentSchema),
+  createComment
 );
