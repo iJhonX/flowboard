@@ -30,10 +30,13 @@ import {
   updateCard,
   deleteCard,
   reorderCard,
+  assignCard,
+  unassignCard,
 } from '../api/boards';
 import { socket } from '../socket';
 import CardCommentsModal from '../components/CardCommentsModal';
 import ActivityFeed from '../components/ActivityFeed';
+import NotificationBell from '../components/NotificationBell';
 
 // Eventos de otros clientes que invalidan el tablero actual (Fase 5).
 // El manejo es deliberadamente simple: en vez de parchear el estado local
@@ -51,6 +54,8 @@ const BOARD_SOCKET_EVENTS = [
   'card:deleted',
   'card:moved',
   'comment:created',
+  'card:assigned',
+  'card:unassigned',
 ];
 
 /** Contenido visual de una tarjeta (reutilizado por SortableCard y el DragOverlay). */
@@ -65,6 +70,19 @@ function CardContent({ card }) {
         <p className="mt-1.5 text-xs text-slate-400">
           📅 {new Date(`${card.due_date}T00:00:00`).toLocaleDateString()}
         </p>
+      )}
+      {card.assignees?.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {card.assignees.map((a) => (
+            <span
+              key={a.id}
+              title={a.name}
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-medium text-indigo-700"
+            >
+              {a.name.slice(0, 2).toUpperCase()}
+            </span>
+          ))}
+        </div>
       )}
     </>
   );
@@ -461,6 +479,27 @@ export default function Board() {
     }
   }
 
+  async function handleAssign(cardId, userId) {
+    if (!userId) return;
+    setActionError(null);
+    try {
+      await assignCard(boardId, cardId, Number(userId));
+      await refresh();
+    } catch (err) {
+      setActionError(err.message);
+    }
+  }
+
+  async function handleUnassign(cardId, userId) {
+    setActionError(null);
+    try {
+      await unassignCard(boardId, cardId, userId);
+      await refresh();
+    } catch (err) {
+      setActionError(err.message);
+    }
+  }
+
   async function handleDeleteColumn(columnId) {
     if (!window.confirm('¿Eliminar esta columna? Sus tarjetas también se eliminarán.')) return;
     setActionError(null);
@@ -575,6 +614,7 @@ export default function Board() {
             >
               Actividad
             </button>
+            <NotificationBell />
             <Link to="/health" className="text-sm text-slate-500 hover:text-slate-700">
               Estado del sistema
             </Link>
@@ -703,6 +743,45 @@ export default function Board() {
                                 onChange={(e) => setEditing({ ...editing, due_date: e.target.value })}
                                 className="w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none"
                               />
+                              <div>
+                                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                                  Asignados
+                                </p>
+                                {card.assignees.length > 0 && (
+                                  <div className="mb-1.5 flex flex-wrap gap-1.5">
+                                    {card.assignees.map((a) => (
+                                      <span
+                                        key={a.id}
+                                        className="flex items-center gap-1 rounded-full bg-slate-100 py-0.5 pl-2 pr-1 text-xs text-slate-700"
+                                      >
+                                        {a.name}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUnassign(card.id, a.id)}
+                                          title="Quitar asignación"
+                                          className="rounded-full px-1 text-slate-400 hover:bg-slate-200 hover:text-red-600"
+                                        >
+                                          ×
+                                        </button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                <select
+                                  value=""
+                                  onChange={(e) => handleAssign(card.id, e.target.value)}
+                                  className="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
+                                >
+                                  <option value="">+ Asignar a…</option>
+                                  {board.teamMembers
+                                    .filter((m) => !card.assignees.some((a) => a.id === m.id))
+                                    .map((m) => (
+                                      <option key={m.id} value={m.id}>
+                                        {m.name}
+                                      </option>
+                                    ))}
+                                </select>
+                              </div>
                               <div className="flex items-center gap-2">
                                 <button
                                   type="submit"

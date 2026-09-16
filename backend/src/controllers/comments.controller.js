@@ -1,7 +1,44 @@
+import { pool } from '../config/postgres.js';
 import { Comment } from '../models/comment.model.js';
 import { getUserName } from '../utils/users.js';
 import { logActivity } from '../utils/activityLog.js';
+import { notifyUser } from '../utils/notifications.js';
+import { extractMentionedEmails } from '../utils/mentions.js';
 import { emitToBoard } from '../sockets/index.js';
+
+/**
+ * Resuelve los @email mencionados en un comentario contra los miembros del
+ * equipo del tablero (así no se puede notificar a alguien ajeno al equipo
+ * solo por conocer su email) y notifica a cada uno, salvo que se
+ * mencionen a sí mismos. Best-effort: un fallo acá no debe tumbar la
+ * creación del comentario, que ya se guardó.
+ */
+async function notifyMentionedUsers({ text, authorId, authorName, board, card }) {
+  const mentionedEmails = extractMentionedEmails(text);
+  if (mentionedEmails.length === 0) return;
+
+  try {
+    const { rows: mentionedUsers } = await pool.query(
+      `SELECT u.id, u.email FROM team_members tm
+       JOIN users u ON u.id = tm.user_id
+       WHERE tm.team_id = $1 AND u.email = ANY($2::text[])`,
+      [board.team_id, mentionedEmails]
+    );
+
+    for (const user of mentionedUsers) {
+      if (user.id === authorId) continue;
+      notifyUser({
+        userId: user.id,
+        type: 'mention',
+        message: `${authorName} te mencionó en un comentario: "${text.slice(0, 80)}"`,
+        boardId: board.id,
+        cardId: card.id,
+      });
+    }
+  } catch (err) {
+    console.error('No se pudieron resolver las menciones del comentario:', err);
+  }
+}
 
 /** GET /api/boards/:boardId/cards/:cardId/comments */
 export async function listComments(req, res, next) {
@@ -39,6 +76,14 @@ export async function createComment(req, res, next) {
       boardId: req.board.id,
       cardId: req.card.id,
       comment,
+    });
+
+    notifyMentionedUsers({
+      text,
+      authorId: req.userId,
+      authorName: userName,
+      board: req.board,
+      card: req.card,
     });
 
     res.status(201).json({ comment });

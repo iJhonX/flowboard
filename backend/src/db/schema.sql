@@ -58,8 +58,18 @@ CREATE TABLE IF NOT EXISTS cards (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Fase 7: asignados de una tarjeta (muchos a muchos). Clave compuesta:
+-- un usuario no puede estar asignado dos veces a la misma tarjeta.
+CREATE TABLE IF NOT EXISTS card_assignees (
+  card_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (card_id, user_id)
+);
+
 -- Índices para las consultas más frecuentes
 CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_boards_team ON boards(team_id);
 CREATE INDEX IF NOT EXISTS idx_columns_board ON columns(board_id);
 CREATE INDEX IF NOT EXISTS idx_cards_column ON cards(column_id);
+CREATE INDEX IF NOT EXISTS idx_card_assignees_user ON card_assignees(user_id);

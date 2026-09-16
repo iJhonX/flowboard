@@ -1,7 +1,10 @@
 import { pool } from '../config/postgres.js';
 import { emitToBoard } from '../sockets/index.js';
 import { logActivity } from '../utils/activityLog.js';
+import { notifyUser } from '../utils/notifications.js';
+import { getUserName } from '../utils/users.js';
 import { Comment } from '../models/comment.model.js';
+import { ActivityLog } from '../models/activityLog.model.js';
 
 /**
  * GET /api/boards/:boardId — tablero con sus columnas y, dentro, sus
@@ -15,7 +18,7 @@ export async function getBoard(req, res, next) {
   try {
     const boardId = req.board.id;
 
-    const [boardRes, columnsRes, cardsRes] = await Promise.all([
+    const [boardRes, columnsRes, cardsRes, teamMembersRes] = await Promise.all([
       pool.query('SELECT * FROM boards WHERE id = $1', [boardId]),
       pool.query('SELECT * FROM columns WHERE board_id = $1 ORDER BY position, id', [boardId]),
       pool.query(
@@ -27,17 +30,43 @@ export async function getBoard(req, res, next) {
          ORDER BY position, id`,
         [boardId]
       ),
+      // Para el selector de "asignar a": quién se puede asignar a una
+      // tarjeta de este tablero es quien sea miembro de su equipo dueño.
+      pool.query(
+        `SELECT u.id, u.name
+         FROM team_members tm JOIN users u ON u.id = tm.user_id
+         WHERE tm.team_id = $1
+         ORDER BY u.name`,
+        [req.board.team_id]
+      ),
     ]);
 
     const cardIds = cardsRes.rows.map((card) => card.id);
-    const commentCounts =
+    const [commentCounts, assigneesRes] = await Promise.all([
       cardIds.length > 0
-        ? await Comment.aggregate([
+        ? Comment.aggregate([
             { $match: { card_id: { $in: cardIds } } },
             { $group: { _id: '$card_id', count: { $sum: 1 } } },
           ])
-        : [];
+        : Promise.resolve([]),
+      cardIds.length > 0
+        ? pool.query(
+            `SELECT ca.card_id, u.id, u.name
+             FROM card_assignees ca
+             JOIN users u ON u.id = ca.user_id
+             WHERE ca.card_id = ANY($1::int[])
+             ORDER BY ca.assigned_at`,
+            [cardIds]
+          )
+        : Promise.resolve({ rows: [] }),
+    ]);
     const countByCardId = new Map(commentCounts.map((c) => [c._id, c.count]));
+    const assigneesByCardId = new Map();
+    for (const row of assigneesRes.rows) {
+      const list = assigneesByCardId.get(row.card_id) ?? [];
+      list.push({ id: row.id, name: row.name });
+      assigneesByCardId.set(row.card_id, list);
+    }
 
     const columns = columnsRes.rows.map((column) => ({ ...column, cards: [] }));
     const cardsByColumn = new Map(columns.map((column) => [column.id, column.cards]));
@@ -45,10 +74,16 @@ export async function getBoard(req, res, next) {
       cardsByColumn.get(card.column_id)?.push({
         ...card,
         comment_count: countByCardId.get(card.id) ?? 0,
+        assignees: assigneesByCardId.get(card.id) ?? [],
       });
     }
 
-    res.json({ board: boardRes.rows[0], columns });
+    res.json({
+      board: boardRes.rows[0],
+      columns,
+      myRole: req.membershipRole,
+      teamMembers: teamMembersRes.rows,
+    });
   } catch (err) {
     next(err);
   }
@@ -387,5 +422,145 @@ export async function reorderCard(req, res, next) {
     next(err);
   } finally {
     client?.release();
+  }
+}
+
+/**
+ * DELETE /api/boards/:boardId — borra el tablero completo (CASCADE en
+ * Postgres se lleva columnas/tarjetas/asignaciones). Restringido a
+ * owner/admin por requireRole en la ruta (Fase 7).
+ *
+ * Cascada manual a Mongo: se borran los comentarios de TODAS las tarjetas
+ * del tablero (igual razón que deleteColumn: quedarían huérfanos) y
+ * también el activity_log del tablero — a diferencia del borrado de una
+ * tarjeta suelta, acá el tablero entero deja de ser accesible, así que su
+ * historial de actividad ya no tiene dónde mostrarse. Las notificaciones
+ * NO se tocan: son la bandeja personal de cada usuario, no una vista de
+ * este tablero, y "fulano te mencionó" sigue siendo un registro válido
+ * aunque el link ya no lleve a ningún lado.
+ */
+export async function deleteBoard(req, res, next) {
+  try {
+    const { rows: cardRows } = await pool.query(
+      `SELECT id FROM cards WHERE column_id IN (SELECT id FROM columns WHERE board_id = $1)`,
+      [req.board.id]
+    );
+
+    const { rowCount } = await pool.query('DELETE FROM boards WHERE id = $1', [req.board.id]);
+    if (rowCount === 0) {
+      return res.status(404).json({ error: 'Tablero no encontrado' });
+    }
+
+    if (cardRows.length > 0) {
+      Comment.deleteMany({ card_id: { $in: cardRows.map((r) => r.id) } }).catch((err) =>
+        console.error('No se pudieron borrar los comentarios del tablero eliminado:', err)
+      );
+    }
+    ActivityLog.deleteMany({ board_id: req.board.id }).catch((err) =>
+      console.error('No se pudo borrar el activity_log del tablero eliminado:', err)
+    );
+
+    emitToBoard(req.board.id, 'board:deleted', { boardId: req.board.id, actorUserId: req.userId });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/boards/:boardId/cards/:cardId/assignees — asigna un miembro del
+ * equipo a la tarjeta. Cualquier miembro puede asignar (no está restringido
+ * por rol): asignar tareas es parte de trabajar con el tablero, no una
+ * acción administrativa, igual que crear tarjetas.
+ */
+export async function assignCard(req, res, next) {
+  const { user_id: assigneeId } = req.body;
+
+  try {
+    const {
+      rows: [teamMember],
+    } = await pool.query(
+      `SELECT u.name FROM team_members tm JOIN users u ON u.id = tm.user_id
+       WHERE tm.team_id = $1 AND tm.user_id = $2`,
+      [req.board.team_id, assigneeId]
+    );
+    if (!teamMember) {
+      return res.status(400).json({ error: 'Ese usuario no es miembro del equipo del tablero' });
+    }
+
+    const {
+      rows: [assignment],
+    } = await pool.query(
+      `INSERT INTO card_assignees (card_id, user_id) VALUES ($1, $2)
+       ON CONFLICT (card_id, user_id) DO NOTHING
+       RETURNING card_id, user_id`,
+      [req.card.id, assigneeId]
+    );
+    if (!assignment) {
+      return res.status(409).json({ error: 'Ese usuario ya está asignado a esta tarjeta' });
+    }
+
+    emitToBoard(req.board.id, 'card:assigned', {
+      boardId: req.board.id,
+      cardId: req.card.id,
+      user: { id: assigneeId, name: teamMember.name },
+      actorUserId: req.userId,
+    });
+    logActivity({
+      boardId: req.board.id,
+      userId: req.userId,
+      actionType: 'card_assigned',
+      metadata: { cardId: req.card.id, title: req.card.title, assigneeName: teamMember.name },
+    });
+
+    if (assigneeId !== req.userId) {
+      const actorName = await getUserName(req.userId);
+      notifyUser({
+        userId: assigneeId,
+        type: 'assignment',
+        message: `${actorName} te asignó a la tarjeta "${req.card.title}"`,
+        boardId: req.board.id,
+        cardId: req.card.id,
+      });
+    }
+
+    res.status(201).json({ assignee: { id: assigneeId, name: teamMember.name } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** DELETE /api/boards/:boardId/cards/:cardId/assignees/:userId — quita un asignado. */
+export async function unassignCard(req, res, next) {
+  const assigneeId = Number(req.params.userId);
+  if (!Number.isInteger(assigneeId) || assigneeId <= 0) {
+    return res.status(400).json({ error: 'ID de usuario inválido' });
+  }
+
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM card_assignees WHERE card_id = $1 AND user_id = $2',
+      [req.card.id, assigneeId]
+    );
+    if (rowCount === 0) {
+      return res.status(404).json({ error: 'Ese usuario no está asignado a esta tarjeta' });
+    }
+
+    emitToBoard(req.board.id, 'card:unassigned', {
+      boardId: req.board.id,
+      cardId: req.card.id,
+      userId: assigneeId,
+      actorUserId: req.userId,
+    });
+    logActivity({
+      boardId: req.board.id,
+      userId: req.userId,
+      actionType: 'card_unassigned',
+      metadata: { cardId: req.card.id, title: req.card.title },
+    });
+
+    res.status(204).end();
+  } catch (err) {
+    next(err);
   }
 }

@@ -28,3 +28,16 @@ export function createBoard(teamId, name, description = '') {
     body: JSON.stringify({ name, description }),
   });
 }
+
+/** Cambiar el rol de un miembro (Fase 7) — solo owner. */
+export function updateMemberRole(teamId, userId, role) {
+  return apiFetch(`/api/teams/${teamId}/members/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role }),
+  });
+}
+
+/** Expulsar a un miembro (Fase 7) — owner/admin. */
+export function removeMember(teamId, userId) {
+  return apiFetch(`/api/teams/${teamId}/members/${userId}`, { method: 'DELETE' });
+}

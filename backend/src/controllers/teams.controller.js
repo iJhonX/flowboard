@@ -78,13 +78,10 @@ export async function getTeamDetail(req, res, next) {
   }
 }
 
-/** POST /api/teams/:teamId/members — invita a un usuario por email (rol member). */
+/** POST /api/teams/:teamId/members — invita a un usuario por email (rol member).
+ *  Restringido a owner/admin por el middleware requireRole en la ruta. */
 export async function inviteMember(req, res, next) {
   const { email } = req.body;
-
-  if (req.membershipRole !== 'owner' && req.membershipRole !== 'admin') {
-    return res.status(403).json({ error: 'Solo el owner o un admin pueden invitar miembros' });
-  }
 
   try {
     const {
@@ -119,6 +116,80 @@ export async function inviteMember(req, res, next) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Ese usuario ya es miembro del equipo' });
     }
+    next(err);
+  }
+}
+
+/**
+ * PATCH /api/teams/:teamId/members/:userId — cambia el rol de un miembro
+ * entre 'admin' y 'member'. Restringido a owner (middleware requireRole en
+ * la ruta): dejar que un admin reasigne roles abriría la puerta a que se
+ * ascienda a sí mismo o a otro admin sin control.
+ */
+export async function updateMemberRole(req, res, next) {
+  const targetUserId = Number(req.params.userId);
+  const { role } = req.body;
+
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return res.status(400).json({ error: 'ID de usuario inválido' });
+  }
+  if (targetUserId === req.team.owner_id) {
+    return res.status(400).json({ error: 'El owner del equipo no puede cambiar su propio rol' });
+  }
+
+  try {
+    const {
+      rows: [membership],
+    } = await pool.query(
+      `UPDATE team_members SET role = $1 WHERE team_id = $2 AND user_id = $3
+       RETURNING user_id, role`,
+      [role, req.team.id, targetUserId]
+    );
+    if (!membership) {
+      return res.status(404).json({ error: 'Ese usuario no es miembro del equipo' });
+    }
+    res.json({ member: membership });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/teams/:teamId/members/:userId — expulsa a un miembro.
+ * Restringido a owner/admin (middleware requireRole en la ruta), con dos
+ * reglas extra que el middleware no puede expresar por sí solo: no se
+ * puede expulsar al owner, y un admin no puede expulsar a otro admin (solo
+ * el owner puede) — evita que dos admins se saquen entre sí.
+ */
+export async function removeMember(req, res, next) {
+  const targetUserId = Number(req.params.userId);
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return res.status(400).json({ error: 'ID de usuario inválido' });
+  }
+  if (targetUserId === req.team.owner_id) {
+    return res.status(400).json({ error: 'No se puede expulsar al owner del equipo' });
+  }
+
+  try {
+    const {
+      rows: [target],
+    } = await pool.query('SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2', [
+      req.team.id,
+      targetUserId,
+    ]);
+    if (!target) {
+      return res.status(404).json({ error: 'Ese usuario no es miembro del equipo' });
+    }
+    if (target.role === 'admin' && req.membershipRole !== 'owner') {
+      return res.status(403).json({ error: 'Solo el owner puede expulsar a un admin' });
+    }
+
+    await pool.query('DELETE FROM team_members WHERE team_id = $1 AND user_id = $2', [
+      req.team.id,
+      targetUserId,
+    ]);
+    res.status(204).end();
+  } catch (err) {
     next(err);
   }
 }

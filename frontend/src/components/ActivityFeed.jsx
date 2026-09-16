@@ -14,6 +14,8 @@ const ACTIVITY_SOCKET_EVENTS = [
   'card:deleted',
   'card:moved',
   'comment:created',
+  'card:assigned',
+  'card:unassigned',
 ];
 
 /** Mensaje legible por tipo de acción. metadata la arma boards.controller.js. */
@@ -36,6 +38,10 @@ function describeActivity(entry) {
       return `movió la tarjeta "${metadata.title}"`;
     case 'comment_created':
       return `comentó en "${metadata.cardTitle}": "${metadata.preview}"`;
+    case 'card_assigned':
+      return `asignó a ${metadata.assigneeName} a la tarjeta "${metadata.title}"`;
+    case 'card_unassigned':
+      return `quitó una asignación de la tarjeta "${metadata.title}"`;
     default:
       return type;
   }

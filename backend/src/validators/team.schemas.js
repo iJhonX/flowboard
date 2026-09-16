@@ -12,6 +12,13 @@ export const inviteMemberSchema = z.object({
   email: z.string().trim().toLowerCase().email('El email no es válido'),
 });
 
+// Fase 7: cambiar el rol de un miembro. 'owner' queda fuera a propósito —
+// solo puede haber un owner por equipo (es quien lo creó) y transferir esa
+// titularidad no es parte del alcance de este proyecto.
+export const updateMemberRoleSchema = z.object({
+  role: z.enum(['admin', 'member'], { message: 'Rol inválido' }),
+});
+
 export const createBoardSchema = z.object({
   name: z
     .string()

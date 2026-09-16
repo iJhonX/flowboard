@@ -10,6 +10,7 @@ import { healthRouter } from './routes/health.routes.js';
 import { authRouter } from './routes/auth.routes.js';
 import { teamsRouter } from './routes/teams.routes.js';
 import { boardsRouter } from './routes/boards.routes.js';
+import { notificationsRouter } from './routes/notifications.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { initSockets } from './sockets/index.js';
 
@@ -25,6 +26,7 @@ app.use('/api', healthRouter);
 app.use('/api', authRouter);
 app.use('/api', teamsRouter);
 app.use('/api', boardsRouter);
+app.use('/api', notificationsRouter);
 
 app.use(errorHandler);
 

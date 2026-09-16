@@ -9,6 +9,14 @@ function boardRoom(boardId) {
   return `board:${boardId}`;
 }
 
+// Sala personal (Fase 7): a diferencia de `board:<id>`, a esta se une
+// automáticamente CUALQUIER socket autenticado, sin pasar por un evento
+// `join` — las notificaciones son del usuario, no de un tablero abierto,
+// así que tienen que llegarle sin importar en qué pantalla esté.
+function userRoom(userId) {
+  return `user:${userId}`;
+}
+
 /**
  * Autentica el handshake leyendo la misma cookie httpOnly que usa la API
  * REST (ACCESS_TOKEN_COOKIE). No hay refresh sobre el socket: si el access
@@ -46,6 +54,8 @@ export function initSockets(httpServer) {
   io.use(authenticateSocket);
 
   io.on('connection', (socket) => {
+    socket.join(userRoom(socket.userId));
+
     socket.on('board:join', async (boardId, callback) => {
       const id = Number(boardId);
       if (!Number.isInteger(id) || id <= 0) {
@@ -74,4 +84,9 @@ export function initSockets(httpServer) {
 /** Emite un evento a todos los clientes unidos a la sala de un tablero. */
 export function emitToBoard(boardId, event, payload) {
   io?.to(boardRoom(boardId)).emit(event, payload);
+}
+
+/** Emite un evento a todas las conexiones (pestañas) de un usuario. */
+export function emitToUser(userId, event, payload) {
+  io?.to(userRoom(userId)).emit(event, payload);
 }

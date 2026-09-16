@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { fetchMe, login as loginRequest, register as registerRequest, logout as logoutRequest } from '../api/auth';
+import { socket } from '../socket';
 
 const AuthContext = createContext(null);
 
@@ -51,7 +52,15 @@ export function AuthProvider({ children }) {
     try {
       await logoutRequest();
     } finally {
-      // Aunque falle la petición, la sesión local se limpia igual
+      // Aunque falle la petición, la sesión local se limpia igual.
+      // Desconectar el socket es igual de importante: quedó autenticado con
+      // la cookie del usuario saliente (el handshake solo se valida una vez,
+      // ver sockets/index.js) y nunca se reconecta solo — si otro usuario
+      // inicia sesión en la misma pestaña sin recargar, se quedaría sin
+      // notificaciones en vivo porque el socket seguiría unido a la sala
+      // personal del usuario anterior. connect() es seguro de llamar de
+      // nuevo (no-op si ya conectado) la próxima vez que haga falta.
+      socket.disconnect();
       setUser(null);
       setStatus('unauthenticated');
     }

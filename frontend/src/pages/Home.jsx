@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { fetchMyTeams, createTeam } from '../api/teams';
+import NotificationBell from '../components/NotificationBell';
 
 /**
  * Dashboard de la Fase 2: lista mis equipos y permite crear uno nuevo.
@@ -67,6 +68,7 @@ export default function Home() {
           <h1 className="text-xl font-semibold text-slate-900">FlowBoard</h1>
           <div className="flex items-center gap-4">
             <span className="text-sm text-slate-500">Hola, {user.name}</span>
+            <NotificationBell />
             <Link to="/health" className="text-sm text-slate-500 hover:text-slate-700">
               Estado del sistema
             </Link>

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { fetchTeam, inviteMember, createBoard } from '../api/teams';
+import { fetchTeam, inviteMember, updateMemberRole, removeMember, createBoard } from '../api/teams';
+import { deleteBoard } from '../api/boards';
+import NotificationBell from '../components/NotificationBell';
 
 const ROLE_LABELS = { owner: 'Owner', admin: 'Admin', member: 'Miembro' };
 
@@ -22,7 +24,11 @@ export default function TeamDetail() {
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState(null);
 
+  const [memberActionError, setMemberActionError] = useState(null);
+  const [boardActionError, setBoardActionError] = useState(null);
+
   const canInvite = detail?.team && ['owner', 'admin'].includes(detail.myRole);
+  const canManageBoards = detail?.team && ['owner', 'admin'].includes(detail.myRole);
 
   async function load() {
     try {
@@ -92,6 +98,38 @@ export default function TeamDetail() {
     }
   }
 
+  async function handleRoleChange(userId, role) {
+    setMemberActionError(null);
+    try {
+      await updateMemberRole(teamId, userId, role);
+      await load();
+    } catch (err) {
+      setMemberActionError(err.message);
+    }
+  }
+
+  async function handleExpel(member) {
+    if (!window.confirm(`¿Expulsar a ${member.name} del equipo?`)) return;
+    setMemberActionError(null);
+    try {
+      await removeMember(teamId, member.id);
+      await load();
+    } catch (err) {
+      setMemberActionError(err.message);
+    }
+  }
+
+  async function handleDeleteBoard(board) {
+    if (!window.confirm(`¿Eliminar el tablero "${board.name}"? Esta acción no se puede deshacer.`)) return;
+    setBoardActionError(null);
+    try {
+      await deleteBoard(board.id);
+      await load();
+    } catch (err) {
+      setBoardActionError(err.message);
+    }
+  }
+
   if (error) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
@@ -121,9 +159,12 @@ export default function TeamDetail() {
             </Link>
             <h1 className="text-xl font-semibold text-slate-900">{detail.team.name}</h1>
           </div>
-          <Link to="/health" className="text-sm text-slate-500 hover:text-slate-700">
-            Estado del sistema
-          </Link>
+          <div className="flex items-center gap-3">
+            <NotificationBell />
+            <Link to="/health" className="text-sm text-slate-500 hover:text-slate-700">
+              Estado del sistema
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -168,11 +209,11 @@ export default function TeamDetail() {
           ) : (
             <ul className="mt-3 space-y-2">
               {detail.boards.map((board) => (
-                <li key={board.id}>
-                  <Link
-                    to={`/boards/${board.id}`}
-                    className="block rounded-lg border border-slate-200 bg-white px-4 py-3 hover:border-indigo-300 hover:shadow-sm"
-                  >
+                <li
+                  key={board.id}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 hover:border-indigo-300 hover:shadow-sm"
+                >
+                  <Link to={`/boards/${board.id}`} className="min-w-0 flex-1">
                     <p className="font-medium text-slate-900">{board.name}</p>
                     {board.description && (
                       <p className="mt-0.5 text-sm text-slate-500">{board.description}</p>
@@ -181,30 +222,76 @@ export default function TeamDetail() {
                       Creado el {new Date(board.created_at).toLocaleDateString()} · Abrir tablero →
                     </p>
                   </Link>
+                  {canManageBoards && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteBoard(board)}
+                      title="Eliminar tablero"
+                      className="shrink-0 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                    >
+                      Eliminar
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
           )}
+          {boardActionError && <p className="mt-2 text-sm text-red-600">{boardActionError}</p>}
         </section>
 
         <section className="mt-8">
           <h2 className="text-lg font-semibold text-slate-900">Miembros ({detail.members.length})</h2>
           <ul className="mt-3 space-y-2">
-            {detail.members.map((member) => (
-              <li
-                key={member.id}
-                className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3"
-              >
-                <div>
-                  <p className="font-medium text-slate-900">{member.name}</p>
-                  <p className="text-sm text-slate-500">{member.email}</p>
-                </div>
-                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-                  {ROLE_LABELS[member.role] ?? member.role}
-                </span>
-              </li>
-            ))}
+            {detail.members.map((member) => {
+              // Mismas reglas que el backend (teams.controller.js):
+              // solo el owner reasigna roles; el owner nunca cambia su
+              // propio rol; un admin no puede expulsar a otro admin.
+              const canChangeRole = detail.myRole === 'owner' && member.role !== 'owner';
+              const canExpel =
+                ['owner', 'admin'].includes(detail.myRole) &&
+                member.role !== 'owner' &&
+                !(detail.myRole === 'admin' && member.role === 'admin');
+
+              return (
+                <li
+                  key={member.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3"
+                >
+                  <div>
+                    <p className="font-medium text-slate-900">{member.name}</p>
+                    <p className="text-sm text-slate-500">{member.email}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {canChangeRole ? (
+                      <select
+                        value={member.role}
+                        onChange={(e) => handleRoleChange(member.id, e.target.value)}
+                        className="rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="member">Miembro</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    ) : (
+                      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                        {ROLE_LABELS[member.role] ?? member.role}
+                      </span>
+                    )}
+                    {canExpel && (
+                      <button
+                        type="button"
+                        onClick={() => handleExpel(member)}
+                        title="Expulsar del equipo"
+                        className="rounded px-1.5 py-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
+          {memberActionError && <p className="mt-2 text-sm text-red-600">{memberActionError}</p>}
 
           {canInvite ? (
             <form onSubmit={handleInvite} className="mt-4 flex gap-3">

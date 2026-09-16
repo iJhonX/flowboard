@@ -1,13 +1,14 @@
 import { pool } from '../config/postgres.js';
 
 /**
- * Devuelve el tablero si `userId` es miembro del equipo dueño, o `null` si no.
- * Extraído como función independiente para poder reutilizar la misma
- * comprobación de membresía desde fuera de Express (sockets/index.js).
+ * Devuelve el tablero (con `membership_role` del usuario en el equipo dueño)
+ * si `userId` es miembro, o `null` si no. Extraído como función
+ * independiente para poder reutilizar la misma comprobación de membresía
+ * desde fuera de Express (sockets/index.js).
  */
 export async function findBoardIfMember(userId, boardId) {
   const { rows } = await pool.query(
-    `SELECT b.*
+    `SELECT b.*, tm.role AS membership_role
      FROM boards b
      JOIN teams t ON t.id = b.team_id
      JOIN team_members tm ON tm.team_id = t.id
@@ -38,6 +39,7 @@ export async function requireBoardMember(req, res, next) {
     }
 
     req.board = board;
+    req.membershipRole = board.membership_role;
     next();
   } catch (err) {
     next(err);

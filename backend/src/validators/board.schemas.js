@@ -61,3 +61,8 @@ export const reorderCardSchema = z.object({
   column_id: z.number().int().positive('La columna es obligatoria'),
   position: z.number().int().min(0, 'La posición no puede ser negativa'),
 });
+
+// Asignación de tarjeta (Fase 7)
+export const assignCardSchema = z.object({
+  user_id: z.number().int().positive('El usuario es obligatorio'),
+});

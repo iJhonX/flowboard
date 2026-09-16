@@ -47,3 +47,22 @@ export function reorderCard(boardId, cardId, columnId, position) {
     body: JSON.stringify({ column_id: columnId, position }),
   });
 }
+
+/** Borrar tablero completo (Fase 7) — owner/admin. */
+export function deleteBoard(boardId) {
+  return apiFetch(`/api/boards/${boardId}`, { method: 'DELETE' });
+}
+
+/** Asignar/desasignar miembros del equipo a una tarjeta (Fase 7). */
+export function assignCard(boardId, cardId, userId) {
+  return apiFetch(`/api/boards/${boardId}/cards/${cardId}/assignees`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+export function unassignCard(boardId, cardId, userId) {
+  return apiFetch(`/api/boards/${boardId}/cards/${cardId}/assignees/${userId}`, {
+    method: 'DELETE',
+  });
+}
