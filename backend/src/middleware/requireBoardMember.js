@@ -25,12 +25,11 @@ export async function findBoardIfMember(userId, boardId) {
  *
  * Igual que requireTeamMember: 404 (no 403) para no revelar la existencia
  * de tableros de equipos ajenos.
+ *
+ * Requiere que la ruta ya haya pasado por validateIdParam('boardId').
  */
 export async function requireBoardMember(req, res, next) {
-  const boardId = Number(req.params.boardId);
-  if (!Number.isInteger(boardId) || boardId <= 0) {
-    return res.status(400).json({ error: 'ID de tablero inválido' });
-  }
+  const boardId = req.params.boardId;
 
   try {
     const board = await findBoardIfMember(req.userId, boardId);

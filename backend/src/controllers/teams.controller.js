@@ -127,12 +127,9 @@ export async function inviteMember(req, res, next) {
  * ascienda a sí mismo o a otro admin sin control.
  */
 export async function updateMemberRole(req, res, next) {
-  const targetUserId = Number(req.params.userId);
+  const targetUserId = req.params.userId;
   const { role } = req.body;
 
-  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
-    return res.status(400).json({ error: 'ID de usuario inválido' });
-  }
   if (targetUserId === req.team.owner_id) {
     return res.status(400).json({ error: 'El owner del equipo no puede cambiar su propio rol' });
   }
@@ -162,10 +159,7 @@ export async function updateMemberRole(req, res, next) {
  * el owner puede) — evita que dos admins se saquen entre sí.
  */
 export async function removeMember(req, res, next) {
-  const targetUserId = Number(req.params.userId);
-  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
-    return res.status(400).json({ error: 'ID de usuario inválido' });
-  }
+  const targetUserId = req.params.userId;
   if (targetUserId === req.team.owner_id) {
     return res.status(400).json({ error: 'No se puede expulsar al owner del equipo' });
   }

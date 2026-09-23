@@ -16,6 +16,8 @@ import { socket } from '../socket';
  */
 export default function NotificationBell() {
   const [notifications, setNotifications] = useState(null); // null = cargando
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState(null);
   const containerRef = useRef(null);
@@ -25,7 +27,10 @@ export default function NotificationBell() {
     let cancelled = false;
     fetchNotifications()
       .then((data) => {
-        if (!cancelled) setNotifications(data.notifications);
+        if (!cancelled) {
+          setNotifications(data.notifications);
+          setHasMore(data.hasMore);
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);
@@ -34,6 +39,24 @@ export default function NotificationBell() {
       cancelled = true;
     };
   }, []);
+
+  // Paginación por cursor (Fase 8): pide notificaciones más viejas que la
+  // última que ya tenemos cargada y las agrega al final de la lista.
+  async function handleLoadMore() {
+    const last = notifications?.[notifications.length - 1];
+    if (!last) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const data = await fetchNotifications(last.created_at);
+      setNotifications((prev) => [...prev, ...data.notifications]);
+      setHasMore(data.hasMore);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     function handleNew(notification) {
@@ -127,6 +150,16 @@ export default function NotificationBell() {
                   </li>
                 ))}
               </ul>
+            )}
+            {hasMore && (
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="block w-full px-4 py-2 text-center text-xs font-medium text-indigo-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {loadingMore ? 'Cargando…' : 'Cargar más'}
+              </button>
             )}
           </div>
         </div>

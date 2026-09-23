@@ -313,10 +313,7 @@ export async function deleteCard(req, res, next) {
  */
 export async function reorderCard(req, res, next) {
   const { column_id, position } = req.body;
-  const cardId = Number(req.params.cardId);
-  if (!Number.isInteger(cardId) || cardId <= 0) {
-    return res.status(400).json({ error: 'ID de tarjeta inválido' });
-  }
+  const cardId = req.params.cardId;
 
   let client;
   try {
@@ -532,10 +529,7 @@ export async function assignCard(req, res, next) {
 
 /** DELETE /api/boards/:boardId/cards/:cardId/assignees/:userId — quita un asignado. */
 export async function unassignCard(req, res, next) {
-  const assigneeId = Number(req.params.userId);
-  if (!Number.isInteger(assigneeId) || assigneeId <= 0) {
-    return res.status(400).json({ error: 'ID de usuario inválido' });
-  }
+  const assigneeId = req.params.userId;
 
   try {
     const { rowCount } = await pool.query(

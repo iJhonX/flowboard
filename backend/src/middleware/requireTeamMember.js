@@ -7,12 +7,12 @@ import { pool } from '../config/postgres.js';
  *
  * Devuelve 404 (no 403) cuando no hay membresía: así no se revela a usuarios
  * ajenos si un equipo existe o no (evita enumerar equipos privados).
+ *
+ * Requiere que la ruta ya haya pasado por validateIdParam('teamId') — deja
+ * req.params.teamId como Number.
  */
 export async function requireTeamMember(req, res, next) {
-  const teamId = Number(req.params.teamId);
-  if (!Number.isInteger(teamId) || teamId <= 0) {
-    return res.status(400).json({ error: 'ID de equipo inválido' });
-  }
+  const teamId = req.params.teamId;
 
   try {
     const { rows } = await pool.query(

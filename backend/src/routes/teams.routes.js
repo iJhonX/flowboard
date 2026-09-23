@@ -15,6 +15,7 @@ import {
   createBoardSchema,
 } from '../validators/team.schemas.js';
 import { validate } from '../middleware/validate.js';
+import { validateIdParam } from '../middleware/validateIdParam.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireTeamMember } from '../middleware/requireTeamMember.js';
 import { requireRole } from '../middleware/requireRole.js';
@@ -26,9 +27,10 @@ teamsRouter.use(requireAuth);
 
 teamsRouter.post('/teams', validate(createTeamSchema), createTeam);
 teamsRouter.get('/teams', listMyTeams);
-teamsRouter.get('/teams/:teamId', requireTeamMember, getTeamDetail);
+teamsRouter.get('/teams/:teamId', validateIdParam('teamId'), requireTeamMember, getTeamDetail);
 teamsRouter.post(
   '/teams/:teamId/members',
+  validateIdParam('teamId'),
   requireTeamMember,
   requireRole('owner', 'admin'),
   validate(inviteMemberSchema),
@@ -36,15 +38,25 @@ teamsRouter.post(
 );
 teamsRouter.patch(
   '/teams/:teamId/members/:userId',
+  validateIdParam('teamId'),
   requireTeamMember,
   requireRole('owner'),
+  validateIdParam('userId'),
   validate(updateMemberRoleSchema),
   updateMemberRole
 );
 teamsRouter.delete(
   '/teams/:teamId/members/:userId',
+  validateIdParam('teamId'),
   requireTeamMember,
   requireRole('owner', 'admin'),
+  validateIdParam('userId'),
   removeMember
 );
-teamsRouter.post('/teams/:teamId/boards', requireTeamMember, validate(createBoardSchema), createBoard);
+teamsRouter.post(
+  '/teams/:teamId/boards',
+  validateIdParam('teamId'),
+  requireTeamMember,
+  validate(createBoardSchema),
+  createBoard
+);

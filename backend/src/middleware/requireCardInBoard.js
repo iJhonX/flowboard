@@ -16,12 +16,11 @@ export async function findCardInBoard(cardId, boardId) {
  * Igual que requireBoardMember pero un nivel más abajo: resuelve
  * :cardId y verifica que pertenece al tablero ya resuelto en req.board
  * (requireBoardMember debe ejecutarse antes). Deja req.card.
+ *
+ * Requiere que la ruta ya haya pasado por validateIdParam('cardId').
  */
 export async function requireCardInBoard(req, res, next) {
-  const cardId = Number(req.params.cardId);
-  if (!Number.isInteger(cardId) || cardId <= 0) {
-    return res.status(400).json({ error: 'ID de tarjeta inválido' });
-  }
+  const cardId = req.params.cardId;
 
   try {
     const card = await findCardInBoard(cardId, req.board.id);

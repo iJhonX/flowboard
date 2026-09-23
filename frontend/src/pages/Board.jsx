@@ -100,7 +100,7 @@ function CardContent({ card }) {
  *  pelear con los listeners de arrastre de dnd-kit (que solo están atados
  *  al botón principal). Abre el modal de "solo comentarios", no el
  *  formulario de edición de la tarjeta. */
-function SortableCard({ card, onStartEdit, onViewComments }) {
+function SortableCard({ card, onStartEdit, onViewComments, matchesSearch = true }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: String(card.id),
     data: { type: 'card', columnId: card.column_id },
@@ -112,7 +112,7 @@ function SortableCard({ card, onStartEdit, onViewComments }) {
   };
 
   return (
-    <li className="relative">
+    <li className={`relative ${matchesSearch ? '' : 'opacity-30'}`}>
       <button
         ref={setNodeRef}
         style={style}
@@ -238,6 +238,22 @@ export default function Board() {
   const [board, setBoard] = useState(null);
   const [error, setError] = useState(null);
   const [actionError, setActionError] = useState(null);
+
+  // Búsqueda de tarjetas (Fase 8): el tablero completo ya está cargado en
+  // memoria (lo necesita el drag & drop), así que filtrar en el cliente
+  // evita un roundtrip innecesario — no hay endpoint de búsqueda en el
+  // backend a propósito. Resalta en vez de ocultar/quitar tarjetas del DOM:
+  // ocultarlas cambiaría los índices que usa dnd-kit para calcular
+  // posiciones y arriesgaría romper el reordenamiento mientras se busca.
+  const [cardSearch, setCardSearch] = useState('');
+  const normalizedSearch = cardSearch.trim().toLowerCase();
+  function cardMatchesSearch(card) {
+    if (!normalizedSearch) return true;
+    return (
+      card.title.toLowerCase().includes(normalizedSearch) ||
+      card.description?.toLowerCase().includes(normalizedSearch)
+    );
+  }
 
   // Añadir columna
   const [showNewColumn, setShowNewColumn] = useState(false);
@@ -628,6 +644,16 @@ export default function Board() {
         </div>
       )}
 
+      <div className="mx-auto mt-4 max-w-5xl px-4">
+        <input
+          type="text"
+          placeholder="Buscar tarjetas por título o descripción…"
+          value={cardSearch}
+          onChange={(e) => setCardSearch(e.target.value)}
+          className="w-full max-w-xs rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+        />
+      </div>
+
       <main className="mx-auto max-w-5xl px-4 py-6">
         <DndContext
           sensors={sensors}
@@ -812,6 +838,7 @@ export default function Board() {
                             card={card}
                             onStartEdit={() => handleCardClick(card)}
                             onViewComments={() => setViewingCommentsCard(card)}
+                            matchesSearch={cardMatchesSearch(card)}
                           />
                         )
                       )}
