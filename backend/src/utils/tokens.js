@@ -11,15 +11,22 @@ export const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
  * Opciones comunes para las cookies de sesión.
  * httpOnly: el token nunca es legible desde JS del navegador (protege contra XSS).
  * secure: solo se envía por HTTPS — en desarrollo local (http) debe ser false.
- * sameSite: 'lax' evita que el token viaje en peticiones cross-site de terceros.
- *   Nota para Fase 9: si frontend y backend quedan en dominios distintos,
- *   habrá que revisar esta config (sameSite 'none' + secure).
+ * sameSite: en desarrollo 'lax' (frontend y backend son localhost, mismo sitio).
+ *   En producción el frontend (Vercel) y el backend (Railway) viven en dominios
+ *   distintos, así que las peticiones fetch son cross-site y 'lax' haría que el
+ *   navegador NO enviara la cookie: se usa 'none' (que exige secure: true).
+ *   Al aflojar sameSite se pierde la protección CSRF que daba 'lax'; se compensa
+ *   con CORS restringido a CLIENT_URL y con que toda mutación es JSON
+ *   (Content-Type: application/json fuerza preflight, que un formulario
+ *   cross-site no puede pasar).
  */
+const isProduction = process.env.NODE_ENV === 'production';
+
 function getCookieOptions(maxAgeMs) {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
     path: '/',
     maxAge: maxAgeMs,
   };

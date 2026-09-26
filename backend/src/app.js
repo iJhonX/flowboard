@@ -7,6 +7,7 @@ import { authRouter } from './routes/auth.routes.js';
 import { teamsRouter } from './routes/teams.routes.js';
 import { boardsRouter } from './routes/boards.routes.js';
 import { notificationsRouter } from './routes/notifications.routes.js';
+import { requireAllowedOrigin } from './middleware/requireAllowedOrigin.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 /**
@@ -17,7 +18,12 @@ import { errorHandler } from './middleware/errorHandler.js';
  */
 const app = express();
 
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
+// Railway (y la mayoría de PaaS) termina TLS en un proxy: sin esto Express ve
+// todas las peticiones como http y no reconoce la conexión como segura.
+app.set('trust proxy', 1);
+
+app.use(cors({ origin: process.env.CLIENT_URL?.replace(/\/$/, ''), credentials: true }));
+app.use(requireAllowedOrigin);
 app.use(express.json());
 app.use(cookieParser());
 
