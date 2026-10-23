@@ -2,7 +2,7 @@
 
 Gestión de proyectos estilo Trello/Asana: equipos con roles, tableros kanban con tarjetas arrastrables, comentarios con menciones, feed de actividad y notificaciones en tiempo real.
 
-**Demo en vivo:** _(agregar URL de Vercel)_ · **API:** _(agregar URL de Railway)_
+**Demo en vivo:** _(agregar URL de Vercel)_ · **API:** _(agregar URL de Render)_
 
 <!-- Agregar capturas o un GIF del tablero en uso: docs/screenshot-board.png -->
 
@@ -46,7 +46,7 @@ flowchart LR
 | Backend | Node.js 22, Express 5, Socket.io, Zod, bcryptjs, jsonwebtoken |
 | Datos | PostgreSQL (`pg`), MongoDB (Mongoose) |
 | Tests | Vitest + Supertest (backend), Vitest + React Testing Library (frontend) |
-| Despliegue | Vercel (frontend), Railway (backend), Neon (Postgres), MongoDB Atlas |
+| Despliegue | Vercel (frontend), Render (backend), Neon (Postgres), MongoDB Atlas |
 
 ## Correr en local
 
@@ -90,11 +90,12 @@ Los tests de backend son de integración y usan las bases configuradas en `backe
 
 ## Despliegue
 
-1. **Bases de datos:** crear el proyecto en Neon y el cluster en Atlas; guardar ambas connection strings. Ejecutar `npm run db:init --prefix backend` una vez apuntando a la base de producción.
-2. **Backend en Railway:** nuevo proyecto desde este repo, *Root Directory* `backend` (usa `backend/railway.json`). Variables: `NODE_ENV=production`, `DATABASE_URL`, `MONGODB_URI`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `CLIENT_URL` (se completa en el paso 4). Generar un dominio público y verificar `https://<dominio>/api/health`.
-3. **Frontend en Vercel:** importar el repo, *Root Directory* `frontend`. Variables: `VITE_API_URL` y `VITE_SOCKET_URL` = URL pública del backend. `frontend/vercel.json` hace el rewrite del router de SPA.
-4. Volver a Railway y poner `CLIENT_URL` = URL de Vercel (sin `/` final), luego redeploy.
-5. En Atlas, *Network Access*: Railway usa IPs dinámicas, por lo que hay que permitir `0.0.0.0/0` (la conexión sigue protegida por usuario/contraseña y TLS) o usar un plan de Railway con IP estática.
+1. **Bases de datos:** Neon (Postgres) y Atlas (MongoDB) tienen plan gratuito permanente; guardar ambas connection strings. **No usar el Postgres gratuito de Render** (expira a los 30 días). Ejecutar `npm run db:init --prefix backend` una vez apuntando a la base de producción.
+2. **Backend en Render:** *New → Blueprint*, elegir este repo (lee `render.yaml`). Render pide los secretos: `DATABASE_URL`, `MONGODB_URI`, `JWT_SECRET`, `JWT_REFRESH_SECRET` y `CLIENT_URL` (dejar un valor provisorio y corregirlo en el paso 4). Al terminar el deploy verificar `https://<servicio>.onrender.com/api/health`.
+3. **Frontend en Vercel:** importar el repo, *Root Directory* `frontend`. Variables: `VITE_API_URL` y `VITE_SOCKET_URL` = URL pública del backend en Render. `frontend/vercel.json` hace el rewrite del router de SPA.
+4. Volver a Render y poner `CLIENT_URL` = URL de Vercel (sin `/` final); el servicio se redeploya solo.
+5. En Atlas, *Network Access*: Render usa IPs dinámicas, por lo que hay que permitir `0.0.0.0/0` (la conexión sigue protegida por usuario/contraseña y TLS).
+6. **Plan gratuito de Render:** el servicio se duerme tras 15 min sin tráfico y el primer acceso tarda ~1 min en despertar. Para mantenerlo activo, crear un monitor gratuito (p. ej. UptimeRobot) que haga GET a `/api/health` cada 10 minutos; un solo servicio consume ~744 de las 750 horas gratuitas del mes.
 
 ### Notas de seguridad
 

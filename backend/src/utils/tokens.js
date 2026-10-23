@@ -12,7 +12,7 @@ export const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
  * httpOnly: el token nunca es legible desde JS del navegador (protege contra XSS).
  * secure: solo se envía por HTTPS — en desarrollo local (http) debe ser false.
  * sameSite: en desarrollo 'lax' (frontend y backend son localhost, mismo sitio).
- *   En producción el frontend (Vercel) y el backend (Railway) viven en dominios
+ *   En producción el frontend (Vercel) y el backend (Render) viven en dominios
  *   distintos, así que las peticiones fetch son cross-site y 'lax' haría que el
  *   navegador NO enviara la cookie: se usa 'none' (que exige secure: true).
  *   Al aflojar sameSite se pierde la protección CSRF que daba 'lax'; se compensa

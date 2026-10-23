@@ -18,7 +18,7 @@ import { errorHandler } from './middleware/errorHandler.js';
  */
 const app = express();
 
-// Railway (y la mayoría de PaaS) termina TLS en un proxy: sin esto Express ve
+// Render (y la mayoría de PaaS) termina TLS en un proxy: sin esto Express ve
 // todas las peticiones como http y no reconoce la conexión como segura.
 app.set('trust proxy', 1);
 

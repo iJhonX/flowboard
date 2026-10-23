@@ -1,0 +1,27 @@
+# Blueprint de Render: crea el backend a partir de este archivo
+# (Dashboard -> New -> Blueprint -> elegir este repo).
+services:
+  - type: web
+    name: flowboard-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22
+      # Secretos: Render los pide al crear el Blueprint (sync: false = no van en el repo)
+      - key: DATABASE_URL
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: CLIENT_URL
+        sync: false
