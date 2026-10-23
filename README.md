@@ -2,7 +2,9 @@
 
 Gestión de proyectos estilo Trello/Asana: equipos con roles, tableros kanban con tarjetas arrastrables, comentarios con menciones, feed de actividad y notificaciones en tiempo real.
 
-**Demo en vivo:** _(agregar URL de Vercel)_ · **API:** _(agregar URL de Render)_
+**Demo en vivo:** https://flowboard-blond-one.vercel.app · **API:** https://flowboard-api-2ds3.onrender.com/api/health
+
+> El backend corre en el plan gratuito de Render: si nadie lo usó en los últimos 15 minutos, el primer acceso tarda cerca de 1 minuto en despertar.
 
 <!-- Agregar capturas o un GIF del tablero en uso: docs/screenshot-board.png -->
 
